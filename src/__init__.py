@@ -1,0 +1,2 @@
+"""Night Hunter application package."""
+

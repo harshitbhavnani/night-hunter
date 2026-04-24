@@ -1,0 +1,116 @@
+from __future__ import annotations
+
+import sys
+from dataclasses import replace
+from pathlib import Path
+from typing import Mapping
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import pandas as pd
+import streamlit as st
+
+from src.config import AppSettings, ScoreWeights, get_settings
+
+
+TABLE_COLUMNS = {
+    "ticker": "Ticker",
+    "price": "Price",
+    "day_change_pct": "% Day",
+    "return_15m": "% 15m",
+    "rvol": "RVOL",
+    "acceleration": "Acceleration",
+    "phase": "Phase",
+    "has_catalyst": "Catalyst",
+    "score": "Score",
+    "verdict": "Verdict",
+}
+
+
+def page_setup(title: str) -> None:
+    st.set_page_config(page_title=f"Night Hunter | {title}", layout="wide")
+
+
+def effective_settings() -> AppSettings:
+    base = get_settings()
+    payload = st.session_state.get("night_hunter_settings")
+    if not payload:
+        return base
+    weights = ScoreWeights(
+        rvol=float(payload.get("weight_rvol", base.score_weights.rvol)),
+        acceleration=float(payload.get("weight_acceleration", base.score_weights.acceleration)),
+        breakout_strength=float(payload.get("weight_breakout", base.score_weights.breakout_strength)),
+        catalyst=float(payload.get("weight_catalyst", base.score_weights.catalyst)),
+        reversal_risk=float(payload.get("weight_reversal_risk", base.score_weights.reversal_risk)),
+    )
+    return replace(
+        base,
+        min_score=float(payload.get("min_score", base.min_score)),
+        alert_score=float(payload.get("alert_score", base.alert_score)),
+        shortlist_size=int(payload.get("shortlist_size", base.shortlist_size)),
+        max_stop_distance_pct=float(payload.get("max_stop_distance_pct", base.max_stop_distance_pct)),
+        min_risk_reward=float(payload.get("min_risk_reward", base.min_risk_reward)),
+        max_vwap_extension_pct=float(payload.get("max_vwap_extension_pct", base.max_vwap_extension_pct)),
+        mock_starting_cash=float(payload.get("mock_starting_cash", base.mock_starting_cash)),
+        score_weights=weights,
+    )
+
+
+def scan_dataframe(rows: list[Mapping[str, object]]) -> pd.DataFrame:
+    if not rows:
+        return pd.DataFrame(columns=list(TABLE_COLUMNS.values()))
+    frame = pd.DataFrame(rows)
+    frame = frame[list(TABLE_COLUMNS.keys())].rename(columns=TABLE_COLUMNS)
+    numeric = ["Price", "% Day", "% 15m", "RVOL", "Acceleration", "Score"]
+    for column in numeric:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce").round(2)
+    frame["Catalyst"] = frame["Catalyst"].map(lambda value: "Yes" if value else "No")
+    return frame
+
+
+def render_trade_card(card: Mapping[str, object] | None) -> None:
+    if not card or card.get("verdict") != "Valid Trade":
+        st.subheader("No Trade Tonight")
+        reasons = (card or {}).get("veto_reasons") or ["No candidate cleared the hard veto logic."]
+        st.caption("Best candidate failed one or more hard rules.")
+        st.write("\n".join(f"- {reason}" for reason in reasons))
+        return
+
+    st.subheader(f"{card['ticker']} | {card['verdict']}")
+    left, middle, right = st.columns(3)
+    left.metric("Score", f"{float(card['score']):.2f}")
+    middle.metric("Phase", str(card["phase"]))
+    right.metric("Risk/Reward", f"1:{float(card['risk_reward']):.2f}")
+
+    st.write(card.get("reason_summary", ""))
+    st.caption(card.get("catalyst_summary", ""))
+
+    levels = {
+        "Entry": card.get("entry"),
+        "Stop": card.get("stop"),
+        "Target 1": card.get("target_1"),
+        "Target 2": card.get("target_2"),
+        "Momentum Life": card.get("estimated_momentum_life"),
+    }
+    st.dataframe(pd.DataFrame([levels]), use_container_width=True, hide_index=True)
+
+    breakdown = pd.DataFrame([card.get("score_breakdown", {})]).T.rename(columns={0: "Subscore"})
+    st.bar_chart(breakdown)
+
+
+def render_setup_instructions(settings: AppSettings) -> None:
+    if settings.live_data_enabled:
+        return
+    st.warning("Connect Alpaca credentials before running a real-data scan.")
+    st.code(
+        """PROVIDER_MODE=live
+ALPACA_API_KEY=your_key
+ALPACA_SECRET_KEY=your_secret
+ALPACA_FEED=iex
+
+TURSO_DATABASE_URL=your_turso_url
+TURSO_AUTH_TOKEN=your_turso_token""",
+        language="toml",
+    )

@@ -1,0 +1,9 @@
+streamlit>=1.35
+pandas>=2.2,<3
+numpy>=1.26,<2
+pyarrow==14.0.2
+requests>=2.31
+python-dotenv>=1.0
+websocket-client>=1.8
+libsql>=0.1.7
+pytest>=8.0
