@@ -15,6 +15,7 @@ from app.ui_helpers import (
     page_setup,
     render_basic_data_banner,
     render_setup_instructions,
+    render_shortlist_trade_card_launcher,
     render_trade_card,
     render_upgrade_trigger_note,
     scan_dataframe,
@@ -68,6 +69,7 @@ render_trade_card(card)
 st.divider()
 st.subheader("Current Shortlist")
 st.dataframe(scan_dataframe(rows), use_container_width=True, hide_index=True)
+render_shortlist_trade_card_launcher(rows, "dashboard")
 
 st.divider()
 st.subheader("Mock Strategy Snapshot")

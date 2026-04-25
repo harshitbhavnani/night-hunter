@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Mapping, Sequence
 
+from src.mock_trading.history import build_trade_history_rows
 from src.mock_trading.performance import compute_performance
 from src.mock_trading.recommendations import recommend_entry_controls
 from src.mock_trading.simulator import update_mock_trade_results
 from src.providers.base import BaseMarketDataProvider, ProviderMessageHandler
-from src.storage.repositories import create_mock_trade, get_mock_trade, list_mock_fills, list_mock_trades
+from src.storage.repositories import add_mock_fill, create_mock_trade, get_mock_trade, list_mock_fills, list_mock_trades
 
 
 class FakeBarsProvider(BaseMarketDataProvider):
@@ -115,7 +117,58 @@ def test_performance_metrics_compute_win_rate_and_drawdown() -> None:
     assert metrics["total_pnl"] > 0
 
 
-def _create_trade(entered_at: datetime) -> int:
+def test_mock_trade_stores_settings_snapshot() -> None:
+    trade_id = _create_trade(
+        datetime.now(timezone.utc),
+        settings_snapshot={
+            "min_score": 7.8,
+            "alpaca_feed": "iex",
+            "data_confidence": "Basic/IEX",
+            "score_weights": {"rvol": 0.3},
+        },
+    )
+
+    trade = get_mock_trade(trade_id)
+    snapshot = json.loads(str(trade["settings_json"]))
+
+    assert snapshot["min_score"] == 7.8
+    assert snapshot["alpaca_feed"] == "iex"
+    assert snapshot["score_weights"]["rvol"] == 0.3
+
+
+def test_trade_history_uses_mock_trades_and_fills() -> None:
+    entered_at = datetime.now(timezone.utc)
+    trade_id = _create_trade(
+        entered_at,
+        settings_snapshot={
+            "min_score": 7.5,
+            "alpaca_feed": "iex",
+            "data_confidence": "Basic/IEX",
+            "score_weights": {"rvol": 0.3, "acceleration": 0.25},
+        },
+    )
+    add_mock_fill(
+        {
+            "trade_id": trade_id,
+            "fill_time": entered_at.isoformat(),
+            "fill_type": "target_1",
+            "shares": 75,
+            "price": 10.5,
+            "pnl": 37.5,
+            "payload": {"ticker": "TEST"},
+        }
+    )
+
+    rows = build_trade_history_rows([get_mock_trade(trade_id)], list_mock_fills(trade_id))
+
+    assert rows[0]["ticker"] == "TEST"
+    assert rows[0]["fills"] == 1
+    assert rows[0]["fill_summary"] == "target_1 75 @ 10.50"
+    assert rows[0]["settings_min_score"] == 7.5
+    assert rows[0]["weight_acceleration"] == 0.25
+
+
+def _create_trade(entered_at: datetime, settings_snapshot: Mapping[str, object] | None = None) -> int:
     return create_mock_trade(
         {
             "entered_at": entered_at.isoformat(),
@@ -141,6 +194,7 @@ def _create_trade(entered_at: datetime) -> int:
             "last_price": 10.0,
             "realized_pnl": 0,
             "notes": "",
+            "settings_snapshot": settings_snapshot or {},
         }
     )
 

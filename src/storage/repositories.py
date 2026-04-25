@@ -183,6 +183,8 @@ def save_settings_version(payload: Mapping[str, object]) -> None:
 def create_mock_trade(trade: Mapping[str, object]) -> int:
     init_db()
     now = utc_now()
+    settings_payload = trade.get("settings_snapshot", trade.get("settings_json", {}))
+    settings_json = settings_payload if isinstance(settings_payload, str) else json.dumps(dict(settings_payload or {}))
     with get_connection() as connection:
         cursor = connection.execute(
             """
@@ -191,8 +193,8 @@ def create_mock_trade(trade: Mapping[str, object]) -> int:
                 dollar_amount, entry, stop, current_stop, target_1, target_2, target_1_pct,
                 target_2_pct, max_hold_minutes, move_stop_to_breakeven, shares,
                 remaining_shares, risk_per_share, entry_notional, last_price, realized_pnl,
-                closed_at, exit_reason, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                closed_at, exit_reason, settings_json, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 now,
@@ -221,6 +223,7 @@ def create_mock_trade(trade: Mapping[str, object]) -> int:
                 trade.get("realized_pnl", 0),
                 trade.get("closed_at"),
                 trade.get("exit_reason"),
+                settings_json,
                 trade.get("notes", ""),
             ),
         )

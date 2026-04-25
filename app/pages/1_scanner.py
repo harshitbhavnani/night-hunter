@@ -9,7 +9,14 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 
-from app.ui_helpers import effective_settings, page_setup, render_basic_data_banner, render_setup_instructions, scan_dataframe
+from app.ui_helpers import (
+    effective_settings,
+    page_setup,
+    render_basic_data_banner,
+    render_setup_instructions,
+    render_shortlist_trade_card_launcher,
+    scan_dataframe,
+)
 from src.jobs.run_scan import run_scan
 from src.storage.repositories import latest_scan_results
 
@@ -51,5 +58,6 @@ st.dataframe(
 
 if rows:
     st.caption(f"{len(rows)} shortlisted symbols from the current universe.")
+    render_shortlist_trade_card_launcher(rows, "scanner")
 else:
     st.warning("No scan results yet. Connect Alpaca credentials and run a scan.")

@@ -17,6 +17,7 @@ from src.scoring.execution_engine import build_execution_candidate, generate_tra
 from src.scoring.phase_engine import classify_phase
 from src.scoring.score_engine import compute_momentum_score
 from src.scoring.veto_engine import apply_veto_logic
+from src.settings_snapshot import build_settings_snapshot
 from src.storage.repositories import save_scan
 from src.universe.build_universe import build_universe
 from src.utils.timeframes import utc_window
@@ -29,6 +30,7 @@ def run_scan(
 ) -> dict[str, object]:
     settings = settings or get_settings()
     provider = provider or AlpacaProvider(settings)
+    settings_snapshot = build_settings_snapshot(settings)
     universe = build_universe(provider=provider, settings=settings)
     symbols = [str(row["symbol"]).upper() for row in universe]
     fundamentals = {str(row["symbol"]).upper(): row for row in universe}
@@ -38,7 +40,15 @@ def run_scan(
     snapshots = provider.get_snapshots(symbols)
 
     coarse_rows = [
-        _features_for_symbol(symbol, bars_by_symbol.get(symbol, []), snapshots.get(symbol, {}), [], fundamentals.get(symbol, {}), settings)
+        _features_for_symbol(
+            symbol,
+            bars_by_symbol.get(symbol, []),
+            snapshots.get(symbol, {}),
+            [],
+            fundamentals.get(symbol, {}),
+            settings,
+            settings_snapshot,
+        )
         for symbol in symbols
     ]
     coarse_rows = [row for row in coarse_rows if row]
@@ -57,6 +67,7 @@ def run_scan(
                 news_by_symbol.get(symbol, []),
                 fundamentals.get(symbol, {}),
                 settings,
+                settings_snapshot,
             )
         coarse_rows = [row for row in row_by_symbol.values() if row]
         coarse_rows.sort(key=lambda row: float(row["score"]), reverse=True)
@@ -73,6 +84,7 @@ def run_scan(
         "universe_count": len(universe),
         "feed": settings.alpaca_feed.lower(),
         "data_confidence": "Basic/IEX" if settings.alpaca_feed.lower() == "iex" else "SIP/Plus",
+        "settings_snapshot": settings_snapshot,
     }
 
 
@@ -83,6 +95,7 @@ def _features_for_symbol(
     news_items: list[Mapping[str, object]],
     fundamentals: Mapping[str, object],
     settings: AppSettings,
+    settings_snapshot: Mapping[str, object],
 ) -> dict[str, object]:
     if len(bars) < 10:
         return {}
@@ -96,6 +109,7 @@ def _features_for_symbol(
         "feed": settings.alpaca_feed.lower(),
         "data_confidence": "Basic/IEX" if settings.alpaca_feed.lower() == "iex" else "SIP/Plus",
         "limitations": "Not consolidated SIP tape" if settings.alpaca_feed.lower() == "iex" else "Consolidated SIP feed",
+        "settings_snapshot": dict(settings_snapshot),
         "price": price,
         "day_change_pct": day_percent_change(snapshot, bars),
         "return_5m": rolling_return(bars, 5),

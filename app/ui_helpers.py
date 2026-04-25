@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
 
 import pandas as pd
 import streamlit as st
+from streamlit.errors import StreamlitAPIException
 
 from src.config import AppSettings, ScoreWeights, get_settings
 
@@ -72,6 +73,37 @@ def scan_dataframe(rows: list[Mapping[str, object]]) -> pd.DataFrame:
         frame[column] = pd.to_numeric(frame[column], errors="coerce").round(2)
     frame["Catalyst"] = frame["Catalyst"].map(lambda value: "Yes" if value else "No")
     return frame
+
+
+def render_shortlist_trade_card_launcher(rows: list[Mapping[str, object]], key_prefix: str) -> None:
+    symbols = [str(row.get("ticker") or row.get("symbol") or "").upper() for row in rows]
+    symbols = [symbol for symbol in symbols if symbol]
+    if not symbols:
+        return
+
+    row_by_symbol = {
+        str(row.get("ticker") or row.get("symbol") or "").upper(): row
+        for row in rows
+        if str(row.get("ticker") or row.get("symbol") or "")
+    }
+
+    def label(symbol: str) -> str:
+        row = row_by_symbol.get(symbol, {})
+        score = float(row.get("score", 0) or 0)
+        return f"{symbol} | Score {score:.2f} | {row.get('phase', '')} | {row.get('verdict', '')}"
+
+    left, right = st.columns([3, 1])
+    selected = left.selectbox("Open shortlist ticker", symbols, format_func=label, key=f"{key_prefix}_trade_symbol")
+    if right.button("Open Trade Card", key=f"{key_prefix}_open_trade_card", use_container_width=True):
+        st.session_state["selected_trade_symbol"] = selected
+        _switch_to_trade_card()
+
+
+def _switch_to_trade_card() -> None:
+    try:
+        st.switch_page("app/pages/2_trade_card.py")
+    except StreamlitAPIException:
+        st.switch_page("pages/2_trade_card.py")
 
 
 def render_trade_card(card: Mapping[str, object] | None) -> None:

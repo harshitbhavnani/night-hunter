@@ -110,7 +110,9 @@ def test_basic_scan_labels_rows_and_trade_card_as_iex() -> None:
     assert result["data_confidence"] == "Basic/IEX"
     assert all(row["feed"] == "iex" for row in result["rows"])
     assert all(row["limitations"] == "Not consolidated SIP tape" for row in result["rows"])
+    assert result["rows"][0]["settings_snapshot"]["alpaca_feed"] == "iex"
     assert result["trade_card"]["data_confidence"] == "Basic/IEX"
+    assert result["trade_card"]["settings_snapshot"]["data_confidence"] == "Basic/IEX"
 
 
 def test_watch_shortlist_caps_streamed_symbols_at_30() -> None:

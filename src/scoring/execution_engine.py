@@ -27,6 +27,7 @@ class TradeCard:
     feed: str
     data_confidence: str
     limitations: str
+    settings_snapshot: Mapping[str, object]
 
     def as_dict(self) -> Dict[str, object]:
         return {
@@ -48,6 +49,7 @@ class TradeCard:
             "feed": self.feed,
             "data_confidence": self.data_confidence,
             "limitations": self.limitations,
+            "settings_snapshot": dict(self.settings_snapshot),
         }
 
 
@@ -108,6 +110,19 @@ def generate_trade_card(
     return best_invalid
 
 
+def generate_trade_card_for_symbol(
+    ranked_rows: Iterable[Mapping[str, object]],
+    symbol: str,
+    settings: AppSettings | None = None,
+) -> TradeCard | None:
+    target = symbol.upper()
+    for row in ranked_rows:
+        row_symbol = str(row.get("ticker") or row.get("symbol") or "").upper()
+        if row_symbol == target:
+            return generate_trade_card([row], settings)
+    return None
+
+
 def _card_from_candidate(candidate: Mapping[str, object], verdict: str, veto_reasons: List[str]) -> TradeCard:
     score = float(candidate.get("score", 0))
     phase = str(candidate.get("phase", "Expansion"))
@@ -118,6 +133,9 @@ def _card_from_candidate(candidate: Mapping[str, object], verdict: str, veto_rea
         f"breakout {float(candidate.get('breakout_strength', 0)):.2f}%",
         f"VWAP distance {float(candidate.get('distance_from_vwap_pct', 0)):.2f}%",
     ]
+    settings_snapshot = candidate.get("settings_snapshot")
+    if not isinstance(settings_snapshot, Mapping):
+        settings_snapshot = {}
     return TradeCard(
         ticker=str(candidate.get("ticker") or candidate.get("symbol") or ""),
         verdict=verdict,
@@ -144,4 +162,5 @@ def _card_from_candidate(candidate: Mapping[str, object], verdict: str, veto_rea
         feed=str(candidate.get("feed", "iex")),
         data_confidence=str(candidate.get("data_confidence", "Basic/IEX")),
         limitations=str(candidate.get("limitations", "Not consolidated SIP tape")),
+        settings_snapshot=dict(settings_snapshot),
     )

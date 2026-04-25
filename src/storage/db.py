@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS mock_trades (
     realized_pnl REAL NOT NULL DEFAULT 0,
     closed_at TEXT,
     exit_reason TEXT,
+    settings_json TEXT NOT NULL DEFAULT '{}',
     notes TEXT
 );
 
@@ -210,3 +211,21 @@ def get_connection(path: Path | str | None = None) -> DatabaseConnection:
 def init_db(path: Path | str | None = None) -> None:
     with get_connection(path) as connection:
         connection.executescript(SCHEMA)
+        _run_migrations(connection)
+
+
+def _run_migrations(connection: DatabaseConnection) -> None:
+    columns = _table_columns(connection, "mock_trades")
+    if columns and "settings_json" not in columns:
+        connection.execute("ALTER TABLE mock_trades ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}'")
+
+
+def _table_columns(connection: DatabaseConnection, table: str) -> set[str]:
+    rows = connection.execute(f"PRAGMA table_info({table})").fetchall()
+    columns: set[str] = set()
+    for row in rows:
+        try:
+            columns.add(str(row["name"]))  # type: ignore[index]
+        except (KeyError, TypeError, IndexError):
+            columns.add(str(row[1]))  # type: ignore[index]
+    return columns

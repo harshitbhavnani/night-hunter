@@ -18,6 +18,7 @@ def enter_mock_trade(
     target_1: float | None = None,
     target_2: float | None = None,
     notes: str = "",
+    settings_snapshot: Mapping[str, object] | None = None,
 ) -> int:
     entry = float(entry if entry is not None else card.get("entry", 0))
     stop = float(stop if stop is not None else card.get("stop", 0))
@@ -60,5 +61,6 @@ def enter_mock_trade(
             "last_price": entry,
             "realized_pnl": 0,
             "notes": notes,
+            "settings_snapshot": dict(settings_snapshot or {}),
         }
     )

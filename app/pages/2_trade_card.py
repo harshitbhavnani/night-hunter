@@ -25,7 +25,9 @@ from src.mock_trading.entry import enter_mock_trade
 from src.mock_trading.recommendations import recommend_entry_controls
 from src.mock_trading.simulator import update_open_mock_trades
 from src.providers.alpaca_provider import AlpacaProvider
-from src.storage.repositories import latest_trade_card, portfolio_state
+from src.scoring.execution_engine import generate_trade_card_for_symbol
+from src.settings_snapshot import build_settings_snapshot
+from src.storage.repositories import latest_scan_results, latest_trade_card, portfolio_state
 from src.utils.timeframes import utc_window
 
 
@@ -54,7 +56,30 @@ if st.button("Update Mock Results", disabled=not settings.live_data_enabled):
             st.success(f"Updated {len(updates)} open mock trade(s).")
 
 result = st.session_state.get("latest_scan_result")
-card = result["trade_card"] if result else latest_trade_card()
+rows = result["rows"] if result else latest_scan_results(settings.shortlist_size)
+selected_symbol = st.session_state.get("selected_trade_symbol")
+card_context = "Best Candidate"
+card = None
+
+if selected_symbol:
+    selected_card = generate_trade_card_for_symbol(rows, str(selected_symbol), settings)
+    if selected_card:
+        card = selected_card.as_dict()
+        card_context = "Selected From Shortlist"
+    else:
+        st.warning(f"{selected_symbol} is not in the latest shortlist. Showing the best current candidate instead.")
+
+if card is None:
+    card = result["trade_card"] if result else latest_trade_card()
+
+if card and not card.get("settings_snapshot"):
+    card["settings_snapshot"] = build_settings_snapshot(settings)
+
+label_cols = st.columns([1, 4])
+label_cols[0].caption(f"Mode: {card_context}")
+if selected_symbol and label_cols[1].button("Clear Selection"):
+    st.session_state.pop("selected_trade_symbol", None)
+    st.rerun()
 
 render_trade_card(card)
 if card and card.get("verdict") == "Valid Trade":
@@ -119,6 +144,7 @@ if card and card.get("verdict") == "Valid Trade":
                 target_1=target_1,
                 target_2=target_2,
                 notes=notes,
+                settings_snapshot=card.get("settings_snapshot") or build_settings_snapshot(settings),
             )
         except Exception as exc:
             st.error(f"Could not enter mock trade: {exc}")
