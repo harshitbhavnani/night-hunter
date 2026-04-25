@@ -26,6 +26,8 @@ PROVIDER_MODE = "live"
 ALPACA_API_KEY = "..."
 ALPACA_SECRET_KEY = "..."
 ALPACA_FEED = "iex"
+BASIC_MIN_IEX_AVG_DAILY_VOLUME = "10000"
+BASIC_MAX_UNIVERSE_SYMBOLS = "800"
 
 TURSO_DATABASE_URL = "..."
 TURSO_AUTH_TOKEN = "..."
@@ -43,12 +45,12 @@ Alpaca Free does not provide market cap fundamentals, and v1 intentionally does 
 - active/tradable U.S. equities from Alpaca assets,
 - common-stock style exclusions,
 - price from `2` to `50`,
-- 30-day average daily volume at least `500K`,
+- Basic/IEX 30-day average daily IEX volume at least `10K` by default,
 - spread/liquidity quality during scan.
 
 The original demo seed file and synthetic provider behavior have been removed.
 
-The app caches Alpaca assets and daily ADV once per day to stay within Basic limits. Live scans use the cached universe, then request snapshots and 1-minute bars only for filtered symbols. Catalyst news is fetched only after coarse structural ranking.
+The app caches Alpaca assets and daily IEX ADV once per day to stay within Basic limits. Live scans use the cached universe, then request snapshots and 1-minute bars only for filtered symbols. Catalyst news is fetched only after coarse structural ranking. Scanner diagnostics show whether a scan failed at asset discovery, price/volume filtering, minute-bar availability, or feature generation.
 
 ## Strategy Shape
 
@@ -79,10 +81,10 @@ Mock exits are labeled IEX-simulated. Upgrade to Alpaca Algo Trader Plus before 
 
 ## Pages
 
-- **Scanner**: real-data shortlist table.
+- **Scanner**: real-data shortlist table with universe refresh and scan diagnostics.
 - **Trade Card**: one valid execution card or **No Trade Tonight**, plus mock entry form.
-- **Journal**: manual notes and trade journal.
-- **Settings**: thresholds, score weights, and mock bankroll.
+- **Trade History**: mock trades/fills with settings snapshots for later pattern review.
+- **Settings**: thresholds, Basic/IEX universe settings, score weights, and mock bankroll.
 - **Performance**: mock equity curve, P/L, win rate, average R, expectancy, drawdown, target hit rates, hold time, and trade/fill logs.
 
 ## Tests

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Mapping
 
+from src.config import AppSettings, get_settings
+
 
 EXCLUDED_SYMBOL_MARKERS = ("+", "/", ".W", "-W", ".WS", "-WS", ".WTS", "-WTS", ".RT", "-RT", ".U", "-U")
 EXCLUDED_NAME_MARKERS = (
@@ -36,9 +38,23 @@ def is_common_stock(asset: Mapping[str, object]) -> bool:
     return True
 
 
-def passes_universe_filters(asset: Mapping[str, object]) -> bool:
+def volume_floor(settings: AppSettings | None = None) -> float:
+    settings = settings or get_settings()
+    if settings.alpaca_feed.lower() == "iex":
+        return float(settings.basic_min_iex_avg_daily_volume)
+    return 500_000.0
+
+
+def max_universe_symbols(settings: AppSettings | None = None) -> int | None:
+    settings = settings or get_settings()
+    if settings.alpaca_feed.lower() == "iex":
+        return int(settings.basic_max_universe_symbols)
+    return None
+
+
+def passes_universe_filters(asset: Mapping[str, object], settings: AppSettings | None = None) -> bool:
     if not is_common_stock(asset):
         return False
     price = float(asset.get("price") or 0)
     avg_daily_volume = float(asset.get("avg_daily_volume") or 0)
-    return 2 <= price <= 50 and avg_daily_volume >= 500_000
+    return 2 <= price <= 50 and avg_daily_volume >= volume_floor(settings)

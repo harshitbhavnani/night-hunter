@@ -10,8 +10,9 @@ from src.providers.base import BaseMarketDataProvider, ProviderMessageHandler
 
 
 class FakeBasicProvider(BaseMarketDataProvider):
-    def __init__(self, count: int = 80) -> None:
+    def __init__(self, count: int = 80, minute_bars: list[Mapping[str, object]] | None = None) -> None:
         self.symbols = [f"T{i:03d}" for i in range(count)]
+        self._minute_bars = minute_bars
         self.asset_calls = 0
         self.daily_bar_calls = 0
         self.minute_bar_calls = 0
@@ -37,7 +38,7 @@ class FakeBasicProvider(BaseMarketDataProvider):
             self.daily_bar_calls += 1
             return {symbol: [{"c": 10.0, "v": 800000} for _ in range(30)] for symbol in symbols}
         self.minute_bar_calls += 1
-        return {symbol: _minute_bars() for symbol in symbols}
+        return {symbol: (self._minute_bars if self._minute_bars is not None else _minute_bars()) for symbol in symbols}
 
     def get_latest_bars(self, symbols: Sequence[str]):
         return {}
@@ -92,6 +93,11 @@ def test_basic_scan_uses_daily_cache_and_fetches_news_after_coarse_ranking() -> 
     assert provider.news_symbol_counts == [60, 60]
     assert len(first["rows"]) == 10
     assert len(second["rows"]) == 10
+    assert first["diagnostics"]["assets_loaded"] == 80
+    assert first["diagnostics"]["common_stock_count"] == 80
+    assert first["diagnostics"]["universe_size"] == 80
+    assert first["diagnostics"]["feature_rows"] == 80
+    assert second["diagnostics"]["cache_source"] == "hit"
 
 
 def test_basic_scan_labels_rows_and_trade_card_as_iex() -> None:
@@ -111,8 +117,31 @@ def test_basic_scan_labels_rows_and_trade_card_as_iex() -> None:
     assert all(row["feed"] == "iex" for row in result["rows"])
     assert all(row["limitations"] == "Not consolidated SIP tape" for row in result["rows"])
     assert result["rows"][0]["settings_snapshot"]["alpaca_feed"] == "iex"
+    assert result["rows"][0]["settings_snapshot"]["basic_min_iex_avg_daily_volume"] == 10000.0
     assert result["trade_card"]["data_confidence"] == "Basic/IEX"
     assert result["trade_card"]["settings_snapshot"]["data_confidence"] == "Basic/IEX"
+    assert result["diagnostics"]["volume_floor"] == 10000.0
+
+
+def test_empty_scan_returns_diagnostics_without_candidates() -> None:
+    provider = FakeBasicProvider(count=5, minute_bars=[])
+    settings = AppSettings(
+        alpaca_api_key="key",
+        alpaca_secret_key="secret",
+        provider_mode="live",
+        alpaca_feed="iex",
+        shortlist_size=5,
+    )
+
+    result = run_scan(provider=provider, settings=settings, persist=False)
+
+    assert result["rows"] == []
+    assert result["trade_card"] is None
+    assert result["diagnostics"]["universe_size"] == 5
+    assert result["diagnostics"]["symbols_with_1min_bars"] == 0
+    assert result["diagnostics"]["feature_rows"] == 0
+    assert result["diagnostics"]["shortlist_size"] == 0
+    assert result["diagnostics"]["news_symbols_fetched"] == 0
 
 
 def test_watch_shortlist_caps_streamed_symbols_at_30() -> None:

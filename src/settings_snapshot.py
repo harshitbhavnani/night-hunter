@@ -18,5 +18,7 @@ def build_settings_snapshot(settings: AppSettings) -> dict[str, object]:
         "max_vwap_extension_pct": settings.max_vwap_extension_pct,
         "mock_starting_cash": settings.mock_starting_cash,
         "basic_news_candidate_count": settings.basic_news_candidate_count,
+        "basic_min_iex_avg_daily_volume": settings.basic_min_iex_avg_daily_volume,
+        "basic_max_universe_symbols": settings.basic_max_universe_symbols,
         "score_weights": settings.score_weights.as_dict(),
     }

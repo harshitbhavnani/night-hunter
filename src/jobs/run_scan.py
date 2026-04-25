@@ -27,17 +27,28 @@ def run_scan(
     provider: BaseMarketDataProvider | None = None,
     settings: AppSettings | None = None,
     persist: bool = True,
+    force_refresh_universe: bool = False,
 ) -> dict[str, object]:
     settings = settings or get_settings()
     provider = provider or AlpacaProvider(settings)
     settings_snapshot = build_settings_snapshot(settings)
-    universe = build_universe(provider=provider, settings=settings)
+    diagnostics: dict[str, object] = {
+        "feed": settings.alpaca_feed.lower(),
+        "data_confidence": "Basic/IEX" if settings.alpaca_feed.lower() == "iex" else "SIP/Plus",
+    }
+    universe = build_universe(
+        provider=provider,
+        settings=settings,
+        use_cache=not force_refresh_universe,
+        diagnostics=diagnostics,
+    )
     symbols = [str(row["symbol"]).upper() for row in universe]
     fundamentals = {str(row["symbol"]).upper(): row for row in universe}
     start, end = utc_window(90)
 
-    bars_by_symbol = provider.get_historical_bars(symbols, "1Min", start, end)
-    snapshots = provider.get_snapshots(symbols)
+    bars_by_symbol = provider.get_historical_bars(symbols, "1Min", start, end) if symbols else {}
+    snapshots = provider.get_snapshots(symbols) if symbols else {}
+    diagnostics["symbols_with_1min_bars"] = sum(1 for bars in bars_by_symbol.values() if bars)
 
     coarse_rows = [
         _features_for_symbol(
@@ -53,9 +64,11 @@ def run_scan(
     ]
     coarse_rows = [row for row in coarse_rows if row]
     coarse_rows.sort(key=lambda row: float(row["score"]), reverse=True)
+    diagnostics["feature_rows"] = len(coarse_rows)
 
     news_candidate_count = min(len(coarse_rows), max(settings.shortlist_size * 2, settings.basic_news_candidate_count))
     news_symbols = [str(row["ticker"]) for row in coarse_rows[:news_candidate_count]]
+    diagnostics["news_symbols_fetched"] = len(news_symbols)
     news_by_symbol = provider.get_historical_news(news_symbols, start, end) if news_symbols else {}
     if news_by_symbol:
         row_by_symbol = {str(row["ticker"]): row for row in coarse_rows}
@@ -71,9 +84,11 @@ def run_scan(
             )
         coarse_rows = [row for row in row_by_symbol.values() if row]
         coarse_rows.sort(key=lambda row: float(row["score"]), reverse=True)
+        diagnostics["feature_rows"] = len(coarse_rows)
 
     shortlist_size = min(settings.shortlist_size, 30)
     shortlist = coarse_rows[:shortlist_size]
+    diagnostics["shortlist_size"] = len(shortlist)
     trade_card = generate_trade_card(shortlist, settings)
     trade_card_dict = trade_card.as_dict() if trade_card else None
     if persist:
@@ -85,6 +100,7 @@ def run_scan(
         "feed": settings.alpaca_feed.lower(),
         "data_confidence": "Basic/IEX" if settings.alpaca_feed.lower() == "iex" else "SIP/Plus",
         "settings_snapshot": settings_snapshot,
+        "diagnostics": diagnostics,
     }
 
 
@@ -101,6 +117,7 @@ def _features_for_symbol(
         return {}
     price = float((snapshot.get("latestTrade") or {}).get("p") or bars[-1].get("c") or 0)
     avg_daily_volume = float(fundamentals.get("avg_daily_volume") or 0)
+    dollar_volume = float(fundamentals.get("dollar_volume") or 0)
     vwap = compute_vwap(bars)
     liquidity = liquidity_quality(snapshot, avg_daily_volume)
     has_catalyst, catalyst_summary, catalyst_score = catalyst_signal(news_items)
@@ -111,6 +128,9 @@ def _features_for_symbol(
         "limitations": "Not consolidated SIP tape" if settings.alpaca_feed.lower() == "iex" else "Consolidated SIP feed",
         "settings_snapshot": dict(settings_snapshot),
         "price": price,
+        "avg_daily_volume": avg_daily_volume,
+        "avg_daily_volume_source": fundamentals.get("avg_daily_volume_source", "iex"),
+        "dollar_volume": dollar_volume,
         "day_change_pct": day_percent_change(snapshot, bars),
         "return_5m": rolling_return(bars, 5),
         "return_15m": rolling_return(bars, 15),

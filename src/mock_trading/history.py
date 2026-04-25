@@ -58,6 +58,8 @@ def build_trade_history_rows(
                 "settings_max_stop_distance_pct": settings.get("max_stop_distance_pct"),
                 "settings_min_risk_reward": settings.get("min_risk_reward"),
                 "settings_max_vwap_extension_pct": settings.get("max_vwap_extension_pct"),
+                "settings_basic_min_iex_adv": settings.get("basic_min_iex_avg_daily_volume"),
+                "settings_basic_max_universe": settings.get("basic_max_universe_symbols"),
                 "weight_rvol": weights.get("rvol") if isinstance(weights, Mapping) else None,
                 "weight_acceleration": weights.get("acceleration") if isinstance(weights, Mapping) else None,
                 "weight_breakout": weights.get("breakout_strength") if isinstance(weights, Mapping) else None,

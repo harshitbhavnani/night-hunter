@@ -42,17 +42,50 @@ def save_universe_snapshot(rows: Iterable[Mapping[str, object]]) -> None:
 
 
 def get_universe_cache(cache_key: str) -> list[dict[str, object]] | None:
+    record = get_universe_cache_record(cache_key)
+    if not record:
+        return None
+    rows = record["rows"]
+    return list(rows) if rows else None
+
+
+def get_universe_cache_record(cache_key: str) -> dict[str, object] | None:
     init_db()
     with get_connection() as connection:
-        row = connection.execute("SELECT payload_json FROM universe_cache WHERE cache_key = ?", (cache_key,)).fetchone()
+        row = connection.execute(
+            "SELECT created_at, payload_json FROM universe_cache WHERE cache_key = ?",
+            (cache_key,),
+        ).fetchone()
     if not row:
         return None
     payload = json.loads(str(row_value(row, "payload_json")))
-    return list(payload) if isinstance(payload, list) else None
+    if isinstance(payload, list):
+        rows = payload
+        diagnostics = {}
+    elif isinstance(payload, dict):
+        rows = payload.get("rows", [])
+        diagnostics = payload.get("diagnostics", {})
+    else:
+        return None
+    return {
+        "created_at": row_value(row, "created_at"),
+        "rows": list(rows) if isinstance(rows, list) else [],
+        "diagnostics": dict(diagnostics) if isinstance(diagnostics, dict) else {},
+    }
 
 
-def save_universe_cache(cache_key: str, rows: list[Mapping[str, object]]) -> None:
+def save_universe_cache(
+    cache_key: str,
+    rows: list[Mapping[str, object]],
+    diagnostics: Mapping[str, object] | None = None,
+) -> None:
+    if not rows:
+        return
     init_db()
+    payload = {
+        "rows": [dict(row) for row in rows],
+        "diagnostics": dict(diagnostics or {}),
+    }
     with get_connection() as connection:
         connection.execute(
             """
@@ -60,7 +93,7 @@ def save_universe_cache(cache_key: str, rows: list[Mapping[str, object]]) -> Non
             VALUES (?, ?, ?)
             ON CONFLICT(cache_key) DO UPDATE SET created_at = excluded.created_at, payload_json = excluded.payload_json
             """,
-            (cache_key, utc_now(), json.dumps([dict(row) for row in rows])),
+            (cache_key, utc_now(), json.dumps(payload)),
         )
 
 

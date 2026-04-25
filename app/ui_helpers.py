@@ -19,6 +19,7 @@ from src.config import AppSettings, ScoreWeights, get_settings
 TABLE_COLUMNS = {
     "ticker": "Ticker",
     "price": "Price",
+    "avg_daily_volume": "IEX ADV",
     "day_change_pct": "% Day",
     "return_15m": "% 15m",
     "rvol": "RVOL",
@@ -56,6 +57,10 @@ def effective_settings() -> AppSettings:
         min_risk_reward=float(payload.get("min_risk_reward", base.min_risk_reward)),
         max_vwap_extension_pct=float(payload.get("max_vwap_extension_pct", base.max_vwap_extension_pct)),
         mock_starting_cash=float(payload.get("mock_starting_cash", base.mock_starting_cash)),
+        basic_min_iex_avg_daily_volume=float(
+            payload.get("basic_min_iex_avg_daily_volume", base.basic_min_iex_avg_daily_volume)
+        ),
+        basic_max_universe_symbols=int(payload.get("basic_max_universe_symbols", base.basic_max_universe_symbols)),
         score_weights=weights,
     )
 
@@ -68,7 +73,7 @@ def scan_dataframe(rows: list[Mapping[str, object]]) -> pd.DataFrame:
         if column not in frame.columns:
             frame[column] = ""
     frame = frame[list(TABLE_COLUMNS.keys())].rename(columns=TABLE_COLUMNS)
-    numeric = ["Price", "% Day", "% 15m", "RVOL", "Acceleration", "Score"]
+    numeric = ["Price", "IEX ADV", "% Day", "% 15m", "RVOL", "Acceleration", "Score"]
     for column in numeric:
         frame[column] = pd.to_numeric(frame[column], errors="coerce").round(2)
     frame["Catalyst"] = frame["Catalyst"].map(lambda value: "Yes" if value else "No")
@@ -97,6 +102,44 @@ def render_shortlist_trade_card_launcher(rows: list[Mapping[str, object]], key_p
     if right.button("Open Trade Card", key=f"{key_prefix}_open_trade_card", use_container_width=True):
         st.session_state["selected_trade_symbol"] = selected
         _switch_to_trade_card()
+
+
+def render_scan_diagnostics(result: Mapping[str, object] | None) -> None:
+    diagnostics = (result or {}).get("diagnostics")
+    if not isinstance(diagnostics, Mapping):
+        return
+
+    with st.expander("Scan Diagnostics"):
+        cache_source = diagnostics.get("cache_source", "unknown")
+        cache_age = diagnostics.get("cache_age_minutes")
+        cache_text = f"{cache_source}"
+        if cache_age is not None:
+            cache_text += f" ({float(cache_age):.1f} min old)"
+        st.caption(f"Universe cache: {cache_text}")
+        columns = st.columns(4)
+        metrics = [
+            ("Assets", diagnostics.get("assets_loaded")),
+            ("Common Stocks", diagnostics.get("common_stock_count")),
+            ("Price Eligible", diagnostics.get("price_eligible_count")),
+            ("Volume Eligible", diagnostics.get("volume_eligible_count")),
+            ("Universe", diagnostics.get("universe_size")),
+            ("1m Bars", diagnostics.get("symbols_with_1min_bars")),
+            ("Feature Rows", diagnostics.get("feature_rows")),
+            ("Shortlist", diagnostics.get("shortlist_size")),
+        ]
+        for index, (label, value) in enumerate(metrics):
+            display = "cached" if value is None else f"{int(value):,}"
+            columns[index % 4].metric(label, display)
+
+        st.write(
+            {
+                "feed": diagnostics.get("feed"),
+                "volume_floor": diagnostics.get("volume_floor"),
+                "max_universe_symbols": diagnostics.get("max_universe_symbols"),
+                "news_symbols_fetched": diagnostics.get("news_symbols_fetched"),
+                "cache_created_at": diagnostics.get("cache_created_at"),
+            }
+        )
 
 
 def _switch_to_trade_card() -> None:

@@ -54,6 +54,8 @@ class AppSettings:
     scan_refresh_seconds: int = 180
     mock_starting_cash: float = 10_000.0
     basic_news_candidate_count: int = 60
+    basic_min_iex_avg_daily_volume: float = 10_000.0
+    basic_max_universe_symbols: int = 800
     score_weights: ScoreWeights = field(default_factory=ScoreWeights)
 
     @property
@@ -131,6 +133,8 @@ def get_settings() -> AppSettings:
         scan_refresh_seconds=_int_env("SCAN_REFRESH_SECONDS", 180),
         mock_starting_cash=_float_env("MOCK_STARTING_CASH", 10_000.0),
         basic_news_candidate_count=_int_env("BASIC_NEWS_CANDIDATE_COUNT", 60),
+        basic_min_iex_avg_daily_volume=_float_env("BASIC_MIN_IEX_AVG_DAILY_VOLUME", 10_000.0),
+        basic_max_universe_symbols=_int_env("BASIC_MAX_UNIVERSE_SYMBOLS", 800),
         score_weights=weights,
     )
 

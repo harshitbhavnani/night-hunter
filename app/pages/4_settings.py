@@ -22,6 +22,7 @@ render_upgrade_trigger_note()
 
 with st.form("settings"):
     st.subheader("Thresholds")
+    st.caption("These thresholds decide whether a scanned candidate is a valid trade. They do not control initial universe discovery.")
     min_score = st.slider("Minimum valid score", 0.0, 10.0, float(settings.min_score), 0.1)
     alert_score = st.slider("Alert score", 0.0, 10.0, float(settings.alert_score), 0.1)
     shortlist_size = st.slider("Shortlist size", 10, 30, int(settings.shortlist_size), 1)
@@ -38,6 +39,23 @@ with st.form("settings"):
     weight_catalyst = cols[3].number_input("Catalyst", value=float(settings.score_weights.catalyst), step=0.01)
     weight_reversal_risk = cols[4].number_input("Reversal risk", value=float(settings.score_weights.reversal_risk), step=0.01)
 
+    st.subheader("Basic/IEX Universe")
+    st.caption("IEX volume is not consolidated market volume, so Night Hunter uses a Basic-specific discovery floor.")
+    universe_cols = st.columns(2)
+    basic_min_iex_avg_daily_volume = universe_cols[0].number_input(
+        "Min IEX ADV",
+        min_value=0.0,
+        value=float(settings.basic_min_iex_avg_daily_volume),
+        step=1000.0,
+    )
+    basic_max_universe_symbols = universe_cols[1].number_input(
+        "Max scan universe symbols",
+        min_value=50,
+        max_value=3000,
+        value=int(settings.basic_max_universe_symbols),
+        step=50,
+    )
+
     st.subheader("Provider")
     st.caption("Night Hunter v1 is real-data only and uses Alpaca Free/IEX batched REST plus shortlist-only streams.")
     submitted = st.form_submit_button("Apply Settings", type="primary")
@@ -51,6 +69,8 @@ if submitted:
         "min_risk_reward": min_risk_reward,
         "max_vwap_extension_pct": max_vwap_extension_pct,
         "mock_starting_cash": mock_starting_cash,
+        "basic_min_iex_avg_daily_volume": basic_min_iex_avg_daily_volume,
+        "basic_max_universe_symbols": basic_max_universe_symbols,
         "weight_rvol": weight_rvol,
         "weight_acceleration": weight_acceleration,
         "weight_breakout": weight_breakout,
@@ -70,5 +90,7 @@ st.write(
         "Turso configured": bool(settings.turso_database_url and settings.turso_auth_token),
         "Database": str(settings.db_path),
         "Data confidence": "Basic/IEX" if settings.alpaca_feed.lower() == "iex" else "SIP/Plus",
+        "Min IEX ADV": settings.basic_min_iex_avg_daily_volume,
+        "Max Basic universe": settings.basic_max_universe_symbols,
     }
 )

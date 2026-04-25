@@ -14,6 +14,7 @@ from app.ui_helpers import (
     effective_settings,
     page_setup,
     render_basic_data_banner,
+    render_scan_diagnostics,
     render_setup_instructions,
     render_shortlist_trade_card_launcher,
     render_trade_card,
@@ -58,7 +59,10 @@ if top[2].button("Run Scan", type="primary", use_container_width=True, disabled=
             st.error(f"Scan failed: {exc}")
         else:
             st.session_state["latest_scan_result"] = result
-            st.success("Scan complete.")
+            if result["rows"]:
+                st.success("Scan complete.")
+            else:
+                st.warning("Scan complete, but no candidates made it through universe/data availability filters.")
 
 result = st.session_state.get("latest_scan_result")
 rows = result["rows"] if result else latest_scan_results(settings.shortlist_size)
@@ -68,8 +72,11 @@ render_trade_card(card)
 
 st.divider()
 st.subheader("Current Shortlist")
+if result and not rows:
+    st.warning("No candidates made it through universe/data availability filters.")
 st.dataframe(scan_dataframe(rows), use_container_width=True, hide_index=True)
 render_shortlist_trade_card_launcher(rows, "dashboard")
+render_scan_diagnostics(result)
 
 st.divider()
 st.subheader("Mock Strategy Snapshot")

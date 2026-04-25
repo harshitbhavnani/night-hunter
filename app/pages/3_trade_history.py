@@ -65,6 +65,8 @@ if history_rows:
             "settings_max_stop_distance_pct",
             "settings_min_risk_reward",
             "settings_max_vwap_extension_pct",
+            "settings_basic_min_iex_adv",
+            "settings_basic_max_universe",
             "weight_rvol",
             "weight_acceleration",
             "weight_breakout",
