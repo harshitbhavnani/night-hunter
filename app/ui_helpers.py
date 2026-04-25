@@ -115,6 +115,8 @@ def render_scan_diagnostics(result: Mapping[str, object] | None) -> None:
         cache_text = f"{cache_source}"
         if cache_age is not None:
             cache_text += f" ({float(cache_age):.1f} min old)"
+        if diagnostics.get("scan_window_label"):
+            st.caption(str(diagnostics.get("scan_window_label")))
         st.caption(f"Universe cache: {cache_text}")
         columns = st.columns(4)
         metrics = [
@@ -134,6 +136,9 @@ def render_scan_diagnostics(result: Mapping[str, object] | None) -> None:
         st.write(
             {
                 "feed": diagnostics.get("feed"),
+                "scan_mode": diagnostics.get("scan_mode"),
+                "scan_window_start": diagnostics.get("scan_window_start"),
+                "scan_window_end": diagnostics.get("scan_window_end"),
                 "volume_floor": diagnostics.get("volume_floor"),
                 "max_universe_symbols": diagnostics.get("max_universe_symbols"),
                 "news_symbols_fetched": diagnostics.get("news_symbols_fetched"),

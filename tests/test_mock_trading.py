@@ -25,6 +25,9 @@ class FakeBarsProvider(BaseMarketDataProvider):
     def get_latest_bars(self, symbols: Sequence[str]):
         return {}
 
+    def get_market_calendar(self, start: datetime, end: datetime):
+        return [{"date": "2026-04-24", "open": "09:30", "close": "16:00"}]
+
     def get_snapshots(self, symbols: Sequence[str]):
         return {}
 

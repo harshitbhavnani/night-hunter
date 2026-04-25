@@ -20,7 +20,7 @@ from src.scoring.veto_engine import apply_veto_logic
 from src.settings_snapshot import build_settings_snapshot
 from src.storage.repositories import save_scan
 from src.universe.build_universe import build_universe
-from src.utils.timeframes import utc_window
+from src.utils.timeframes import last_completed_session_window
 
 
 def run_scan(
@@ -44,7 +44,17 @@ def run_scan(
     )
     symbols = [str(row["symbol"]).upper() for row in universe]
     fundamentals = {str(row["symbol"]).upper(): row for row in universe}
-    start, end = utc_window(90)
+    scan_window = last_completed_session_window(provider, 90)
+    start = scan_window["start"]
+    end = scan_window["end"]
+    diagnostics.update(
+        {
+            "scan_mode": scan_window["mode"],
+            "scan_window_label": scan_window["label"],
+            "scan_window_start": start.isoformat(),
+            "scan_window_end": end.isoformat(),
+        }
+    )
 
     bars_by_symbol = provider.get_historical_bars(symbols, "1Min", start, end) if symbols else {}
     snapshots = provider.get_snapshots(symbols) if symbols else {}

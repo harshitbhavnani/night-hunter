@@ -61,6 +61,10 @@ if top[2].button("Run Scan", type="primary", use_container_width=True, disabled=
             st.session_state["latest_scan_result"] = result
             if result["rows"]:
                 st.success("Scan complete.")
+            elif result.get("diagnostics", {}).get("universe_size", 0) and not result.get("diagnostics", {}).get(
+                "symbols_with_1min_bars", 0
+            ):
+                st.warning("Scan complete, but no 1-minute bars were found for the selected market session.")
             else:
                 st.warning("Scan complete, but no candidates made it through universe/data availability filters.")
 
@@ -73,7 +77,11 @@ render_trade_card(card)
 st.divider()
 st.subheader("Current Shortlist")
 if result and not rows:
-    st.warning("No candidates made it through universe/data availability filters.")
+    diagnostics = result.get("diagnostics", {})
+    if diagnostics.get("universe_size", 0) and not diagnostics.get("symbols_with_1min_bars", 0):
+        st.warning("No 1-minute bars found for the selected market session.")
+    else:
+        st.warning("No candidates made it through universe/data availability filters.")
 st.dataframe(scan_dataframe(rows), use_container_width=True, hide_index=True)
 render_shortlist_trade_card_launcher(rows, "dashboard")
 render_scan_diagnostics(result)

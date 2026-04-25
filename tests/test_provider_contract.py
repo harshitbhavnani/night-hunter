@@ -18,8 +18,13 @@ def test_alpaca_provider_implements_contract_with_mocked_api(monkeypatch) -> Non
     assert isinstance(provider, BaseMarketDataProvider)
 
     def fake_trading(path: str, params: dict[str, object]) -> object:
-        assert path == "/v2/assets"
-        return [{"symbol": "TEST", "asset_class": "us_equity", "status": "active", "tradable": True}]
+        if path == "/v2/assets":
+            return [{"symbol": "TEST", "asset_class": "us_equity", "status": "active", "tradable": True}]
+        if path == "/v2/calendar":
+            assert "start" in params
+            assert "end" in params
+            return [{"date": "2026-01-02", "open": "09:30", "close": "16:00"}]
+        raise AssertionError(path)
 
     def fake_data(path: str, params: dict[str, object]) -> object:
         if path == "/v2/stocks/bars":
@@ -40,6 +45,7 @@ def test_alpaca_provider_implements_contract_with_mocked_api(monkeypatch) -> Non
     start = end - timedelta(minutes=45)
 
     assert provider.get_assets()[0]["symbol"] == "TEST"
+    assert provider.get_market_calendar(start, end)[0]["date"] == "2026-01-02"
     assert "TEST" in provider.get_historical_bars(symbols, "1Min", start, end)
     assert "TEST" in provider.get_snapshots(symbols)
     assert "TEST" in provider.get_historical_news(symbols, start, end)

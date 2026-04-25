@@ -70,6 +70,16 @@ class AlpacaProvider(BaseMarketDataProvider):
             results.update(payload.get("bars", {}))
         return results
 
+    def get_market_calendar(self, start: datetime, end: datetime) -> List[Mapping[str, object]]:
+        payload = self._get_trading(
+            "/v2/calendar",
+            {
+                "start": start.date().isoformat(),
+                "end": end.date().isoformat(),
+            },
+        )
+        return list(payload) if isinstance(payload, list) else []
+
     def get_snapshots(self, symbols: Sequence[str]) -> Dict[str, Mapping[str, object]]:
         results: Dict[str, Mapping[str, object]] = {}
         for chunk in chunk_symbols(symbols):

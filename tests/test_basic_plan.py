@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Mapping, Sequence
 
 from src.config import AppSettings
@@ -18,6 +18,7 @@ class FakeBasicProvider(BaseMarketDataProvider):
         self.minute_bar_calls = 0
         self.snapshot_calls = 0
         self.news_symbol_counts: list[int] = []
+        self.minute_bar_windows: list[tuple[datetime, datetime]] = []
 
     def get_assets(self) -> list[Mapping[str, object]]:
         self.asset_calls += 1
@@ -38,10 +39,14 @@ class FakeBasicProvider(BaseMarketDataProvider):
             self.daily_bar_calls += 1
             return {symbol: [{"c": 10.0, "v": 800000} for _ in range(30)] for symbol in symbols}
         self.minute_bar_calls += 1
+        self.minute_bar_windows.append((start, end))
         return {symbol: (self._minute_bars if self._minute_bars is not None else _minute_bars()) for symbol in symbols}
 
     def get_latest_bars(self, symbols: Sequence[str]):
         return {}
+
+    def get_market_calendar(self, start: datetime, end: datetime):
+        return [{"date": "2026-04-24", "open": "09:30", "close": "16:00"}]
 
     def get_snapshots(self, symbols: Sequence[str]):
         self.snapshot_calls += 1
@@ -98,6 +103,12 @@ def test_basic_scan_uses_daily_cache_and_fetches_news_after_coarse_ranking() -> 
     assert first["diagnostics"]["universe_size"] == 80
     assert first["diagnostics"]["feature_rows"] == 80
     assert second["diagnostics"]["cache_source"] == "hit"
+    assert first["diagnostics"]["scan_mode"] == "last_session"
+    assert first["diagnostics"]["scan_window_label"] == "Last regular session: 2026-04-24 14:30-16:00 ET"
+    assert provider.minute_bar_windows[0] == (
+        datetime(2026, 4, 24, 18, 30, tzinfo=timezone.utc),
+        datetime(2026, 4, 24, 20, 0, tzinfo=timezone.utc),
+    )
 
 
 def test_basic_scan_labels_rows_and_trade_card_as_iex() -> None:
@@ -142,6 +153,7 @@ def test_empty_scan_returns_diagnostics_without_candidates() -> None:
     assert result["diagnostics"]["feature_rows"] == 0
     assert result["diagnostics"]["shortlist_size"] == 0
     assert result["diagnostics"]["news_symbols_fetched"] == 0
+    assert result["diagnostics"]["scan_window_start"] == "2026-04-24T18:30:00+00:00"
 
 
 def test_watch_shortlist_caps_streamed_symbols_at_30() -> None:

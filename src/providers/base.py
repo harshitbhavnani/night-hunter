@@ -31,6 +31,10 @@ class BaseMarketDataProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def get_market_calendar(self, start: datetime, end: datetime) -> List[Mapping[str, object]]:
+        raise NotImplementedError
+
+    @abstractmethod
     def get_snapshots(self, symbols: Sequence[str]) -> Dict[str, Mapping[str, object]]:
         raise NotImplementedError
 

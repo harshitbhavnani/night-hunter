@@ -54,7 +54,11 @@ if run_now or refresh_universe:
         else:
             st.session_state["latest_scan_result"] = result
             if not result["rows"]:
-                st.warning("No candidates made it through universe/data availability filters.")
+                diagnostics = result.get("diagnostics", {})
+                if diagnostics.get("universe_size", 0) and not diagnostics.get("symbols_with_1min_bars", 0):
+                    st.warning("No 1-minute bars found for the selected market session.")
+                else:
+                    st.warning("No candidates made it through universe/data availability filters.")
 
 result = st.session_state.get("latest_scan_result")
 rows = result["rows"] if result else latest_scan_results(settings.shortlist_size)
@@ -73,7 +77,11 @@ if rows:
     render_shortlist_trade_card_launcher(rows, "scanner")
 else:
     if result:
-        st.warning("No candidates made it through universe/data availability filters.")
+        diagnostics = result.get("diagnostics", {})
+        if diagnostics.get("universe_size", 0) and not diagnostics.get("symbols_with_1min_bars", 0):
+            st.warning("No 1-minute bars found for the selected market session.")
+        else:
+            st.warning("No candidates made it through universe/data availability filters.")
     else:
         st.warning("No scan results yet. Connect Alpaca credentials and run a scan.")
 
