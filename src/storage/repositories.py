@@ -41,6 +41,29 @@ def save_universe_snapshot(rows: Iterable[Mapping[str, object]]) -> None:
         )
 
 
+def get_universe_cache(cache_key: str) -> list[dict[str, object]] | None:
+    init_db()
+    with get_connection() as connection:
+        row = connection.execute("SELECT payload_json FROM universe_cache WHERE cache_key = ?", (cache_key,)).fetchone()
+    if not row:
+        return None
+    payload = json.loads(str(row_value(row, "payload_json")))
+    return list(payload) if isinstance(payload, list) else None
+
+
+def save_universe_cache(cache_key: str, rows: list[Mapping[str, object]]) -> None:
+    init_db()
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO universe_cache (cache_key, created_at, payload_json)
+            VALUES (?, ?, ?)
+            ON CONFLICT(cache_key) DO UPDATE SET created_at = excluded.created_at, payload_json = excluded.payload_json
+            """,
+            (cache_key, utc_now(), json.dumps([dict(row) for row in rows])),
+        )
+
+
 def save_scan(scan_rows: list[Mapping[str, object]], trade_card: Mapping[str, object] | None) -> str:
     init_db()
     scan_id = str(uuid4())

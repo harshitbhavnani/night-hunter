@@ -26,6 +26,7 @@ TABLE_COLUMNS = {
     "has_catalyst": "Catalyst",
     "score": "Score",
     "verdict": "Verdict",
+    "data_confidence": "Data",
 }
 
 
@@ -62,6 +63,9 @@ def scan_dataframe(rows: list[Mapping[str, object]]) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=list(TABLE_COLUMNS.values()))
     frame = pd.DataFrame(rows)
+    for column in TABLE_COLUMNS:
+        if column not in frame.columns:
+            frame[column] = ""
     frame = frame[list(TABLE_COLUMNS.keys())].rename(columns=TABLE_COLUMNS)
     numeric = ["Price", "% Day", "% 15m", "RVOL", "Acceleration", "Score"]
     for column in numeric:
@@ -79,6 +83,8 @@ def render_trade_card(card: Mapping[str, object] | None) -> None:
         return
 
     st.subheader(f"{card['ticker']} | {card['verdict']}")
+    if card.get("data_confidence"):
+        st.caption(f"{card.get('data_confidence')} | {card.get('limitations', '')}")
     left, middle, right = st.columns(3)
     left.metric("Score", f"{float(card['score']):.2f}")
     middle.metric("Phase", str(card["phase"]))
@@ -113,4 +119,31 @@ ALPACA_FEED=iex
 TURSO_DATABASE_URL=your_turso_url
 TURSO_AUTH_TOKEN=your_turso_token""",
         language="toml",
+    )
+
+
+def render_basic_data_banner(settings: AppSettings) -> None:
+    if settings.alpaca_feed.lower() != "iex":
+        return
+    st.warning(
+        "Basic/IEX data only. Signals may miss consolidated market volume, quotes, and breakouts."
+    )
+
+
+def render_upgrade_trigger_note() -> None:
+    with st.expander("When to upgrade data"):
+        st.write(
+            "- Upgrade to Alpaca Algo Trader Plus before relying on mock results for real-money scaling.\n"
+            "- Upgrade if Night Hunter frequently disagrees with Robinhood Legend charts.\n"
+            "- Upgrade if the strategy depends on fast breakouts, tight spreads, or full-market RVOL."
+        )
+
+
+def render_manual_confirmation_checklist() -> None:
+    st.subheader("Manual Confirmation")
+    st.write(
+        "- Confirm price and volume in Robinhood Legend.\n"
+        "- Confirm spread and liquidity are acceptable.\n"
+        "- Confirm the catalyst is real and current.\n"
+        "- Confirm stop and targets still make sense before any real-money execution."
     )

@@ -36,21 +36,44 @@ def run_scan(
 
     bars_by_symbol = provider.get_historical_bars(symbols, "1Min", start, end)
     snapshots = provider.get_snapshots(symbols)
-    news_by_symbol = provider.get_historical_news(symbols, start, end)
 
     coarse_rows = [
-        _features_for_symbol(symbol, bars_by_symbol.get(symbol, []), snapshots.get(symbol, {}), news_by_symbol.get(symbol, []), fundamentals.get(symbol, {}), settings)
+        _features_for_symbol(symbol, bars_by_symbol.get(symbol, []), snapshots.get(symbol, {}), [], fundamentals.get(symbol, {}), settings)
         for symbol in symbols
     ]
     coarse_rows = [row for row in coarse_rows if row]
     coarse_rows.sort(key=lambda row: float(row["score"]), reverse=True)
 
-    shortlist = coarse_rows[: settings.shortlist_size]
+    news_candidate_count = min(len(coarse_rows), max(settings.shortlist_size * 2, settings.basic_news_candidate_count))
+    news_symbols = [str(row["ticker"]) for row in coarse_rows[:news_candidate_count]]
+    news_by_symbol = provider.get_historical_news(news_symbols, start, end) if news_symbols else {}
+    if news_by_symbol:
+        row_by_symbol = {str(row["ticker"]): row for row in coarse_rows}
+        for symbol in news_symbols:
+            row_by_symbol[symbol] = _features_for_symbol(
+                symbol,
+                bars_by_symbol.get(symbol, []),
+                snapshots.get(symbol, {}),
+                news_by_symbol.get(symbol, []),
+                fundamentals.get(symbol, {}),
+                settings,
+            )
+        coarse_rows = [row for row in row_by_symbol.values() if row]
+        coarse_rows.sort(key=lambda row: float(row["score"]), reverse=True)
+
+    shortlist_size = min(settings.shortlist_size, 30)
+    shortlist = coarse_rows[:shortlist_size]
     trade_card = generate_trade_card(shortlist, settings)
     trade_card_dict = trade_card.as_dict() if trade_card else None
     if persist:
         save_scan(shortlist, trade_card_dict)
-    return {"rows": shortlist, "trade_card": trade_card_dict, "universe_count": len(universe)}
+    return {
+        "rows": shortlist,
+        "trade_card": trade_card_dict,
+        "universe_count": len(universe),
+        "feed": settings.alpaca_feed.lower(),
+        "data_confidence": "Basic/IEX" if settings.alpaca_feed.lower() == "iex" else "SIP/Plus",
+    }
 
 
 def _features_for_symbol(
@@ -70,6 +93,9 @@ def _features_for_symbol(
     has_catalyst, catalyst_summary, catalyst_score = catalyst_signal(news_items)
     features = {
         "ticker": symbol,
+        "feed": settings.alpaca_feed.lower(),
+        "data_confidence": "Basic/IEX" if settings.alpaca_feed.lower() == "iex" else "SIP/Plus",
+        "limitations": "Not consolidated SIP tape" if settings.alpaca_feed.lower() == "iex" else "Consolidated SIP feed",
         "price": price,
         "day_change_pct": day_percent_change(snapshot, bars),
         "return_5m": rolling_return(bars, 5),

@@ -53,6 +53,7 @@ class AppSettings:
     max_vwap_extension_pct: float = 8.0
     scan_refresh_seconds: int = 180
     mock_starting_cash: float = 10_000.0
+    basic_news_candidate_count: int = 60
     score_weights: ScoreWeights = field(default_factory=ScoreWeights)
 
     @property
@@ -129,6 +130,7 @@ def get_settings() -> AppSettings:
         max_vwap_extension_pct=_float_env("MAX_VWAP_EXTENSION_PCT", 8.0),
         scan_refresh_seconds=_int_env("SCAN_REFRESH_SECONDS", 180),
         mock_starting_cash=_float_env("MOCK_STARTING_CASH", 10_000.0),
+        basic_news_candidate_count=_int_env("BASIC_NEWS_CANDIDATE_COUNT", 60),
         score_weights=weights,
     )
 

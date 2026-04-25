@@ -9,7 +9,7 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 
-from app.ui_helpers import effective_settings, page_setup, render_setup_instructions, scan_dataframe
+from app.ui_helpers import effective_settings, page_setup, render_basic_data_banner, render_setup_instructions, scan_dataframe
 from src.jobs.run_scan import run_scan
 from src.storage.repositories import latest_scan_results
 
@@ -18,6 +18,7 @@ page_setup("Scanner")
 
 st.title("Scanner")
 settings = effective_settings()
+render_basic_data_banner(settings)
 render_setup_instructions(settings)
 
 left, right = st.columns([1, 2])

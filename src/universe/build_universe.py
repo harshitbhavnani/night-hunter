@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Mapping
 
 from src.config import AppSettings, get_settings
 from src.providers.alpaca_provider import AlpacaProvider
 from src.providers.base import BaseMarketDataProvider
+from src.storage.repositories import get_universe_cache, save_universe_cache
 from src.universe.filters import is_common_stock, passes_universe_filters
 from src.utils.timeframes import utc_window
 
@@ -13,6 +14,7 @@ from src.utils.timeframes import utc_window
 def build_universe(
     provider: BaseMarketDataProvider | None = None,
     settings: AppSettings | None = None,
+    use_cache: bool = True,
 ) -> List[Dict[str, object]]:
     """Build the real-data v1 universe from Alpaca Free data only.
 
@@ -22,12 +24,17 @@ def build_universe(
 
     settings = settings or get_settings()
     provider = provider or AlpacaProvider(settings)
+    cache_key = _cache_key(settings.alpaca_feed)
+    if use_cache:
+        cached = get_universe_cache(cache_key)
+        if cached is not None:
+            return cached
+
     assets = [dict(asset) for asset in provider.get_assets() if is_common_stock(asset)]
     symbols = [str(asset["symbol"]).upper() for asset in assets if asset.get("symbol")]
     if not symbols:
         return []
 
-    snapshots = provider.get_snapshots(symbols)
     end = utc_window(1)[1]
     start = end - timedelta(days=45)
     daily_bars = provider.get_historical_bars(symbols, "1Day", start, end)
@@ -35,7 +42,7 @@ def build_universe(
     rows: List[Dict[str, object]] = []
     for asset in assets:
         symbol = str(asset.get("symbol", "")).upper()
-        price = _snapshot_price(snapshots.get(symbol, {}))
+        price = _daily_close(daily_bars.get(symbol, []))
         avg_daily_volume = _average_daily_volume(daily_bars.get(symbol, []))
         row = {
             **asset,
@@ -46,16 +53,19 @@ def build_universe(
         if passes_universe_filters(row):
             rows.append(row)
     rows.sort(key=lambda row: float(row.get("avg_daily_volume", 0)), reverse=True)
+    save_universe_cache(cache_key, rows)
     return rows
 
 
-def _snapshot_price(snapshot: Mapping[str, object]) -> float:
-    latest_trade = snapshot.get("latestTrade") or {}
-    minute_bar = snapshot.get("minuteBar") or {}
-    daily_bar = snapshot.get("dailyBar") or {}
-    for source, key in ((latest_trade, "p"), (minute_bar, "c"), (daily_bar, "c")):
+def _cache_key(feed: str) -> str:
+    today = datetime.now(timezone.utc).date().isoformat()
+    return f"universe:{feed.lower()}:{today}"
+
+
+def _daily_close(bars: list[Mapping[str, object]]) -> float:
+    for bar in reversed(bars):
         try:
-            price = float(source.get(key) or 0)
+            price = float(bar.get("c") or 0)
         except (AttributeError, TypeError, ValueError):
             price = 0.0
         if price > 0:

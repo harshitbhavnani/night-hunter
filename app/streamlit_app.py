@@ -10,7 +10,15 @@ if str(ROOT) not in sys.path:
 import pandas as pd
 import streamlit as st
 
-from app.ui_helpers import effective_settings, page_setup, render_setup_instructions, render_trade_card, scan_dataframe
+from app.ui_helpers import (
+    effective_settings,
+    page_setup,
+    render_basic_data_banner,
+    render_setup_instructions,
+    render_trade_card,
+    render_upgrade_trigger_note,
+    scan_dataframe,
+)
 from src.jobs.run_scan import run_scan
 from src.mock_trading.performance import compute_performance
 from src.mock_trading.simulator import update_open_mock_trades
@@ -26,6 +34,8 @@ st.title("Night Hunter")
 st.caption("One trade per night momentum dashboard for U.S. equities. Decision support only; execution stays manual.")
 
 settings = effective_settings()
+render_basic_data_banner(settings)
+render_upgrade_trigger_note()
 top = st.columns([1, 1, 2])
 top[0].metric("Provider", "Alpaca Free/IEX" if settings.live_data_enabled else "Not connected")
 top[1].metric("Shortlist", settings.shortlist_size)

@@ -11,7 +11,15 @@ if str(ROOT) not in sys.path:
 import pandas as pd
 import streamlit as st
 
-from app.ui_helpers import effective_settings, page_setup, render_setup_instructions, render_trade_card
+from app.ui_helpers import (
+    effective_settings,
+    page_setup,
+    render_basic_data_banner,
+    render_manual_confirmation_checklist,
+    render_setup_instructions,
+    render_trade_card,
+    render_upgrade_trigger_note,
+)
 from src.jobs.run_scan import run_scan
 from src.mock_trading.entry import enter_mock_trade
 from src.mock_trading.recommendations import recommend_entry_controls
@@ -25,6 +33,8 @@ page_setup("Trade Card")
 
 st.title("Trade Card")
 settings = effective_settings()
+render_basic_data_banner(settings)
+render_upgrade_trigger_note()
 render_setup_instructions(settings)
 
 if st.button("Generate Current Trade Card", type="primary", disabled=not settings.live_data_enabled):
@@ -47,6 +57,8 @@ result = st.session_state.get("latest_scan_result")
 card = result["trade_card"] if result else latest_trade_card()
 
 render_trade_card(card)
+if card and card.get("verdict") == "Valid Trade":
+    render_manual_confirmation_checklist()
 
 if card and card.get("verdict") == "Valid Trade":
     st.divider()

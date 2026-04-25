@@ -10,7 +10,7 @@ if str(ROOT) not in sys.path:
 import pandas as pd
 import streamlit as st
 
-from app.ui_helpers import effective_settings, page_setup, render_setup_instructions
+from app.ui_helpers import effective_settings, page_setup, render_basic_data_banner, render_setup_instructions
 from src.mock_trading.performance import compute_performance
 from src.mock_trading.simulator import update_open_mock_trades
 from src.providers.alpaca_provider import AlpacaProvider
@@ -21,6 +21,8 @@ page_setup("Performance")
 
 st.title("Mock Strategy Performance")
 settings = effective_settings()
+render_basic_data_banner(settings)
+st.caption("Mock exits are replayed from Alpaca Basic/IEX 1-minute bars, not consolidated SIP tape.")
 render_setup_instructions(settings)
 
 if st.button("Update Mock Results", type="primary", disabled=not settings.live_data_enabled):

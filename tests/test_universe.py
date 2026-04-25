@@ -18,8 +18,8 @@ class FakeUniverseProvider(BaseMarketDataProvider):
 
     def get_historical_bars(self, symbols: Sequence[str], timeframe: str, start: datetime, end: datetime):
         return {
-            "GOOD": [{"v": 800000} for _ in range(30)],
-            "LOWV": [{"v": 100000} for _ in range(30)],
+            "GOOD": [{"c": 12, "v": 800000} for _ in range(30)],
+            "LOWV": [{"c": 10, "v": 100000} for _ in range(30)],
         }
 
     def get_latest_bars(self, symbols: Sequence[str]):

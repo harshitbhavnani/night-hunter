@@ -9,7 +9,7 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 
-from app.ui_helpers import effective_settings, page_setup
+from app.ui_helpers import effective_settings, page_setup, render_basic_data_banner, render_upgrade_trigger_note
 from src.storage.repositories import save_settings_version
 
 
@@ -17,6 +17,8 @@ page_setup("Settings")
 
 st.title("Settings")
 settings = effective_settings()
+render_basic_data_banner(settings)
+render_upgrade_trigger_note()
 
 with st.form("settings"):
     st.subheader("Thresholds")
@@ -67,5 +69,6 @@ st.write(
         "Credentials loaded": bool(settings.alpaca_api_key and settings.alpaca_secret_key),
         "Turso configured": bool(settings.turso_database_url and settings.turso_auth_token),
         "Database": str(settings.db_path),
+        "Data confidence": "Basic/IEX" if settings.alpaca_feed.lower() == "iex" else "SIP/Plus",
     }
 )

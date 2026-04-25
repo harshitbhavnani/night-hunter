@@ -15,6 +15,12 @@ CREATE TABLE IF NOT EXISTS universe_snapshots (
     payload_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS universe_cache (
+    cache_key TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS scan_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_id TEXT NOT NULL,

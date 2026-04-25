@@ -12,5 +12,4 @@ def watch_shortlist(
 ) -> None:
     """Start live Stage 2 monitoring for shortlisted symbols only."""
 
-    provider.stream_bars(symbols, on_message)
-
+    provider.stream_bars(list(symbols)[:30], on_message)

@@ -2,7 +2,7 @@
 
 Night Hunter is a Python + Streamlit decision-support dashboard for one U.S. equity momentum trade per night. It is not an auto-trader. Real execution stays manual in Robinhood Legend; the app tracks simulated/mock execution separately.
 
-Version 1 is real-data-only and uses Alpaca Free/IEX only.
+Version 1 is real-data-only and uses Alpaca Basic/IEX first. IEX is useful for the MVP workflow, but it is not consolidated SIP tape and can miss market-wide volume, quotes, and breakouts.
 
 ## App Location
 
@@ -48,6 +48,8 @@ Alpaca Free does not provide market cap fundamentals, and v1 intentionally does 
 
 The original demo seed file and synthetic provider behavior have been removed.
 
+The app caches Alpaca assets and daily ADV once per day to stay within Basic limits. Live scans use the cached universe, then request snapshots and 1-minute bars only for filtered symbols. Catalyst news is fetched only after coarse structural ranking.
+
 ## Strategy Shape
 
 The ranker emphasizes early abnormal behavior rather than daily percent gain:
@@ -72,6 +74,8 @@ Valid trade cards include **Enter Mock Trade**. The app recommends editable cont
 - Target 1 / Target 2 split.
 
 Default mock bankroll is `$10,000`. After Target 1 fills, the remaining stop moves to breakeven by default. Open mock trades are replayed with Alpaca 1-minute bars; “automatic selling” means simulated exits only, never real orders.
+
+Mock exits are labeled IEX-simulated. Upgrade to Alpaca Algo Trader Plus before treating mock results as evidence for real-money scaling, especially if Night Hunter disagrees with Robinhood charts or the strategy depends on fast breakouts, tight spreads, or full-market RVOL.
 
 ## Pages
 

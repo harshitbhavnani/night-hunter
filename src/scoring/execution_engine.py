@@ -24,6 +24,9 @@ class TradeCard:
     reason_summary: str
     veto_reasons: List[str]
     features: Mapping[str, float]
+    feed: str
+    data_confidence: str
+    limitations: str
 
     def as_dict(self) -> Dict[str, object]:
         return {
@@ -42,6 +45,9 @@ class TradeCard:
             "reason_summary": self.reason_summary,
             "veto_reasons": self.veto_reasons,
             "features": dict(self.features),
+            "feed": self.feed,
+            "data_confidence": self.data_confidence,
+            "limitations": self.limitations,
         }
 
 
@@ -135,4 +141,7 @@ def _card_from_candidate(candidate: Mapping[str, object], verdict: str, veto_rea
             "liquidity_quality": float(candidate.get("liquidity_quality", 0)),
             "distance_from_vwap_pct": float(candidate.get("distance_from_vwap_pct", 0)),
         },
+        feed=str(candidate.get("feed", "iex")),
+        data_confidence=str(candidate.get("data_confidence", "Basic/IEX")),
+        limitations=str(candidate.get("limitations", "Not consolidated SIP tape")),
     )
