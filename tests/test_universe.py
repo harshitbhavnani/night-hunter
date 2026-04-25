@@ -5,6 +5,7 @@ from typing import Mapping, Sequence
 
 from src.config import AppSettings
 from src.providers.base import BaseMarketDataProvider, ProviderMessageHandler
+from src.storage.repositories import row_value
 from src.universe.build_universe import build_universe
 
 
@@ -82,6 +83,12 @@ def test_empty_universe_is_not_cached() -> None:
     assert first == []
     assert second == []
     assert provider.asset_calls == 2
+
+
+def test_tuple_row_value_reads_selected_payload_column() -> None:
+    row = ("2026-04-24T00:00:00+00:00", '{"rows": []}')
+
+    assert row_value(row, "payload_json", 1) == '{"rows": []}'
 
 
 class EmptyUniverseProvider(FakeUniverseProvider):

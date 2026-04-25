@@ -58,7 +58,7 @@ def get_universe_cache_record(cache_key: str) -> dict[str, object] | None:
         ).fetchone()
     if not row:
         return None
-    payload = json.loads(str(row_value(row, "payload_json")))
+    payload = json.loads(str(row_value(row, "payload_json", 1)))
     if isinstance(payload, list):
         rows = payload
         diagnostics = {}
@@ -68,7 +68,7 @@ def get_universe_cache_record(cache_key: str) -> dict[str, object] | None:
     else:
         return None
     return {
-        "created_at": row_value(row, "created_at"),
+        "created_at": row_value(row, "created_at", 0),
         "rows": list(rows) if isinstance(rows, list) else [],
         "diagnostics": dict(diagnostics) if isinstance(diagnostics, dict) else {},
     }
