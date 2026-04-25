@@ -102,3 +102,5 @@ app/streamlit_app.py
 ```
 
 Add Alpaca and Turso secrets in Streamlit Cloud before running scans. The app shows setup instructions instead of scanning when Alpaca credentials are missing.
+
+In Streamlit Cloud's **Advanced settings**, choose Python `3.12` if available. If your app was created with Python `3.14`, delete and redeploy it with Python `3.12`; Streamlit Cloud does not use `runtime.txt` for Python version changes after deployment. The requirements file avoids direct NumPy/PyArrow pins so the cloud builder can choose compatible wheels.
