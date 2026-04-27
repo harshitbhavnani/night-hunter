@@ -2,7 +2,7 @@
 
 Night Hunter is a Python + Streamlit decision-support dashboard for one crypto momentum trade idea at a time. It is not an auto-trader. Real orders are never placed; mock trades are replayed from Alpaca crypto 1-minute bars.
 
-Version 1 is crypto-only. Alpaca provides historical momentum bars; Robinhood Crypto provides the execution-venue quote gate so a setup must be tradable on the venue you plan to use.
+Version 1 is crypto-only. Alpaca provides historical momentum bars; Kraken public market data provides the execution-venue quote/depth gate so a setup must be tradable on the venue assumption you plan to use.
 
 ## Run Locally
 
@@ -40,12 +40,12 @@ CRYPTO_MAX_SPREAD_PCT = "0.35"
 CRYPTO_MIN_ORDERBOOK_NOTIONAL_DEPTH = "25000"
 CRYPTO_DEPTH_BPS = "25"
 
-ROBINHOOD_CRYPTO_API_KEY = "..."
-ROBINHOOD_CRYPTO_PRIVATE_KEY = "..."
-ROBINHOOD_QUOTE_GATE_ENABLED = "true"
-ROBINHOOD_MAX_SPREAD_PCT = "0.35"
-ROBINHOOD_MAX_QUOTE_AGE_SECONDS = "10"
-MAX_ALPACA_RH_DEVIATION_PCT = "0.50"
+VENUE_PROVIDER = "kraken"
+KRAKEN_BASE_URL = "https://api.kraken.com"
+KRAKEN_MAX_SPREAD_PCT = "0.35"
+KRAKEN_MAX_QUOTE_AGE_SECONDS = "30"
+KRAKEN_MIN_ORDERBOOK_NOTIONAL_DEPTH = "25000"
+MAX_ALPACA_VENUE_DEVIATION_PCT = "0.50"
 
 TURSO_DATABASE_URL = "..."
 TURSO_AUTH_TOKEN = "..."
@@ -61,10 +61,11 @@ The active universe defaults to dynamic Alpaca crypto discovery. Night Hunter fe
 - refreshes pair/daily quote-volume cache locally,
 - filters by recent quote volume so tiny illiquid coins cannot rank just because they moved sharply,
 - uses Alpaca quote spread and an Alpaca orderbook depth proxy as pre-ranking liquidity gates,
-- uses Robinhood Crypto bid/ask as the final execution-venue spread and tradability gate,
+- uses Kraken public bid/ask as the final execution-venue spread and tradability gate,
+- uses Kraken public orderbook depth as the final venue-depth gate,
 - scans the latest rolling window, default `90` minutes,
 - requests Alpaca crypto bars in batches,
-- requests Robinhood Crypto products and quotes for venue confirmation,
+- requests Kraken AssetPairs, Ticker, and Depth for venue confirmation,
 - ranks by abnormal volume, acceleration, breakout strength, spread/liquidity, and low reversal risk,
 - does not require equity-style catalysts.
 
@@ -80,7 +81,7 @@ Momentum Score =
 - 0.10 * Reversal_risk_score
 ```
 
-Hard vetoes reject weak scores, exhaustion/dump phases, wide stops, poor risk/reward, poor spread/liquidity, excessive VWAP extension, crypto spreads above the configured max, missing Robinhood quotes, non-tradable Robinhood assets, stale Robinhood quotes, wide Robinhood spreads, or excessive Alpaca/Robinhood price deviation.
+Hard vetoes reject weak scores, exhaustion/dump phases, wide stops, poor risk/reward, poor spread/liquidity, excessive VWAP extension, crypto spreads above the configured max, missing Kraken quotes, non-tradable Kraken assets, stale Kraken quotes, wide Kraken spreads, low Kraken depth, or excessive Alpaca/Kraken price deviation.
 
 ## Mock Trading
 
@@ -90,7 +91,7 @@ Valid trade cards include **Enter Mock Trade**. The app recommends editable cont
 - max hold minutes based on phase, score, liquidity, VWAP extension, and reversal risk,
 - Target 1 / Target 2 split.
 
-Crypto quantities are fractional. The mock long entry defaults to Robinhood ask when the venue gate passes. After Target 1 fills, the remaining stop moves to breakeven by default. “Automatic selling” means simulated exits only.
+Crypto quantities are fractional. The mock long entry defaults to Kraken ask when the venue gate passes. After Target 1 fills, the remaining stop moves to breakeven by default. “Automatic selling” means simulated exits only.
 
 ## Pages
 

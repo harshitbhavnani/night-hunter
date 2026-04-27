@@ -30,13 +30,14 @@ def apply_veto_logic(
     distance_vwap = float(candidate.get("distance_from_vwap_pct", 0))
     spread_pct = float(candidate.get("spread_pct", 0) or 0)
     alpaca_depth_notional = _float_default(candidate.get("alpaca_depth_notional"), 0.0)
-    rh_status = str(candidate.get("rh_quote_status", "") or "")
-    rh_bid = _float_default(candidate.get("rh_bid"), 0.0)
-    rh_ask = _float_default(candidate.get("rh_ask"), 0.0)
-    rh_spread_pct = _float_default(candidate.get("rh_spread_pct"), 999.0)
-    rh_quote_age = _optional_float(candidate.get("rh_quote_age_seconds"))
-    rh_tradable = bool(candidate.get("rh_tradable", False))
-    alpaca_rh_deviation = _float_default(candidate.get("alpaca_rh_price_deviation_pct"), 999.0)
+    venue_status = str(candidate.get("venue_quote_status", "") or "")
+    venue_bid = _float_default(candidate.get("venue_bid"), 0.0)
+    venue_ask = _float_default(candidate.get("venue_ask"), 0.0)
+    venue_spread_pct = _float_default(candidate.get("venue_spread_pct"), 999.0)
+    venue_quote_age = _optional_float(candidate.get("venue_quote_age_seconds"))
+    venue_tradable = bool(candidate.get("venue_tradable", False))
+    venue_depth_notional = _float_default(candidate.get("venue_depth_notional"), 0.0)
+    alpaca_venue_deviation = _float_default(candidate.get("alpaca_venue_price_deviation_pct"), 999.0)
 
     if score < settings.min_score:
         reasons.append(f"Score below {settings.min_score:.1f}.")
@@ -54,20 +55,22 @@ def apply_veto_logic(
         reasons.append(f"Crypto spread above {settings.crypto_max_spread_pct:.2f}%.")
     if is_crypto and alpaca_depth_notional < settings.crypto_min_orderbook_notional_depth:
         reasons.append(f"Alpaca depth proxy below ${settings.crypto_min_orderbook_notional_depth:,.0f}.")
-    if is_crypto and settings.robinhood_quote_gate_enabled:
-        if rh_status != "ok":
-            reasons.append("Robinhood venue confirmation missing.")
+    if is_crypto:
+        if venue_status != "ok":
+            reasons.append("Kraken venue confirmation missing.")
         else:
-            if not rh_tradable:
-                reasons.append("Asset is not tradable on Robinhood.")
-            if rh_bid <= 0 or rh_ask <= 0:
-                reasons.append("No usable Robinhood bid/ask quote.")
-            if rh_spread_pct > settings.robinhood_max_spread_pct:
-                reasons.append(f"Robinhood spread above {settings.robinhood_max_spread_pct:.2f}%.")
-            if rh_quote_age is None or rh_quote_age > settings.robinhood_max_quote_age_seconds:
-                reasons.append(f"Robinhood quote stale or undated beyond {settings.robinhood_max_quote_age_seconds}s.")
-            if alpaca_rh_deviation > settings.max_alpaca_rh_deviation_pct:
-                reasons.append(f"Alpaca/Robinhood price deviation above {settings.max_alpaca_rh_deviation_pct:.2f}%.")
+            if not venue_tradable:
+                reasons.append("Asset is not tradable on Kraken.")
+            if venue_bid <= 0 or venue_ask <= 0:
+                reasons.append("No usable Kraken bid/ask quote.")
+            if venue_spread_pct > settings.kraken_max_spread_pct:
+                reasons.append(f"Kraken spread above {settings.kraken_max_spread_pct:.2f}%.")
+            if venue_quote_age is None or venue_quote_age > settings.kraken_max_quote_age_seconds:
+                reasons.append(f"Kraken quote stale or undated beyond {settings.kraken_max_quote_age_seconds}s.")
+            if venue_depth_notional < settings.kraken_min_orderbook_notional_depth:
+                reasons.append(f"Kraken depth below ${settings.kraken_min_orderbook_notional_depth:,.0f}.")
+            if alpaca_venue_deviation > settings.max_alpaca_venue_deviation_pct:
+                reasons.append(f"Alpaca/Kraken price deviation above {settings.max_alpaca_venue_deviation_pct:.2f}%.")
     if distance_vwap > settings.max_vwap_extension_pct:
         reasons.append(f"Too extended from VWAP ({distance_vwap:.1f}%).")
 

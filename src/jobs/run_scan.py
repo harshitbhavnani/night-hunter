@@ -13,7 +13,7 @@ from src.features.rvol import compute_rvol
 from src.features.vwap import compute_vwap, distance_from_vwap_pct
 from src.providers.alpaca_provider import AlpacaProvider
 from src.providers.base import BaseMarketDataProvider
-from src.providers.robinhood_crypto_provider import RobinhoodCryptoProvider
+from src.providers.kraken_venue_provider import KrakenVenueProvider
 from src.scoring.execution_engine import build_execution_candidate, generate_trade_card
 from src.scoring.phase_engine import classify_phase
 from src.scoring.score_engine import compute_momentum_score
@@ -26,7 +26,7 @@ from src.utils.timeframes import utc_window
 
 def run_scan(
     provider: BaseMarketDataProvider | None = None,
-    robinhood_provider: object | None = None,
+    venue_provider: object | None = None,
     settings: AppSettings | None = None,
     persist: bool = True,
     force_refresh_universe: bool = False,
@@ -60,7 +60,7 @@ def run_scan(
     bars_by_symbol = provider.get_historical_bars(symbols, "1Min", start, end) if symbols else {}
     snapshots = provider.get_snapshots(symbols) if symbols else {}
     orderbooks = provider.get_orderbooks(symbols) if symbols else {}
-    rh_products, rh_quotes = _robinhood_venue_data(symbols, robinhood_provider, settings, diagnostics)
+    venue_products, venue_quotes, venue_orderbooks = _venue_data(symbols, venue_provider, settings, diagnostics)
     diagnostics["symbols_with_1min_bars"] = sum(1 for bars in bars_by_symbol.values() if bars)
     diagnostics["alpaca_orderbook_count"] = len(orderbooks)
 
@@ -70,8 +70,9 @@ def run_scan(
             bars_by_symbol.get(symbol, []),
             snapshots.get(symbol, {}),
             orderbooks.get(symbol, {}),
-            rh_quotes.get(symbol, {}),
-            rh_products.get(symbol, {}),
+            venue_quotes.get(symbol, {}),
+            venue_products.get(symbol, {}),
+            venue_orderbooks.get(symbol, {}),
             [],
             fundamentals.get(symbol, {}),
             settings,
@@ -109,8 +110,9 @@ def _features_for_symbol(
     bars: list[Mapping[str, object]],
     snapshot: Mapping[str, object],
     orderbook: Mapping[str, object],
-    robinhood_quote: Mapping[str, object],
-    robinhood_product: Mapping[str, object],
+    venue_quote: Mapping[str, object],
+    venue_product: Mapping[str, object],
+    venue_orderbook: Mapping[str, object],
     news_items: list[Mapping[str, object]],
     fundamentals: Mapping[str, object],
     settings: AppSettings,
@@ -160,7 +162,7 @@ def _features_for_symbol(
         **depth_metrics,
         "alpaca_depth_proxy_ok": depth_notional >= settings.crypto_min_orderbook_notional_depth,
     }
-    features.update(_robinhood_features(symbol, price, robinhood_quote, robinhood_product, settings))
+    features.update(_venue_features(symbol, price, venue_quote, venue_product, venue_orderbook, settings))
     features["reversal_risk"] = reversal_risk_score(bars, price, vwap, liquidity)
     score = compute_momentum_score(features, settings.score_weights)
     features["score"] = score.total
@@ -189,71 +191,76 @@ def _apply_crypto_liquidity_gates(
         for row in spread_rows
         if float(row.get("alpaca_depth_notional", 0) or 0) >= settings.crypto_min_orderbook_notional_depth
     ]
-    rh_tradable_rows = [row for row in depth_rows if bool(row.get("rh_tradable", False))]
-    rh_spread_rows = [
+    venue_tradable_rows = [row for row in depth_rows if bool(row.get("venue_tradable", False))]
+    venue_spread_rows = [
         row
-        for row in rh_tradable_rows
-        if float(row.get("rh_spread_pct", 999) or 999) <= settings.robinhood_max_spread_pct
+        for row in venue_tradable_rows
+        if float(row.get("venue_spread_pct", 999) or 999) <= settings.kraken_max_spread_pct
     ]
-    rh_gate_applied = diagnostics.get("robinhood_quote_status") == "ok"
+    venue_depth_rows = [
+        row
+        for row in venue_spread_rows
+        if float(row.get("venue_depth_notional", 0) or 0) >= settings.kraken_min_orderbook_notional_depth
+    ]
+    venue_gate_applied = diagnostics.get("venue_quote_status") == "ok"
     diagnostics.update(
         {
             "quote_volume_eligible_count": len(quote_rows),
             "alpaca_spread_eligible_count": len(spread_rows),
             "alpaca_depth_eligible_count": len(depth_rows),
-            "robinhood_tradable_count": len(rh_tradable_rows),
-            "robinhood_spread_eligible_count": len(rh_spread_rows),
-            "robinhood_gate_applied": rh_gate_applied,
-            "final_trading_universe_size": len(rh_spread_rows if rh_gate_applied else depth_rows),
+            "venue_tradable_count": len(venue_tradable_rows),
+            "venue_spread_eligible_count": len(venue_spread_rows),
+            "venue_depth_eligible_count": len(venue_depth_rows),
+            "venue_gate_applied": venue_gate_applied,
+            "final_trading_universe_size": len(venue_depth_rows) if venue_gate_applied else 0,
         }
     )
-    return rh_spread_rows if rh_gate_applied else depth_rows
+    return venue_depth_rows if venue_depth_rows else depth_rows
 
 
-def _robinhood_venue_data(
+def _venue_data(
     symbols: list[str],
-    robinhood_provider: object | None,
+    venue_provider: object | None,
     settings: AppSettings,
     diagnostics: dict[str, object],
-) -> tuple[dict[str, Mapping[str, object]], dict[str, Mapping[str, object]]]:
-    diagnostics["robinhood_quote_gate_enabled"] = settings.robinhood_quote_gate_enabled
-    diagnostics["robinhood_credentials_loaded"] = settings.robinhood_quote_gate_ready
-    diagnostics["robinhood_quote_count"] = 0
-    diagnostics["robinhood_product_count"] = 0
-    if not settings.robinhood_quote_gate_enabled or not symbols:
-        diagnostics["robinhood_quote_status"] = "disabled"
-        return {}, {}
-    if robinhood_provider is None and not settings.robinhood_quote_gate_ready:
-        diagnostics["robinhood_quote_status"] = "missing_credentials"
-        return {}, {}
+) -> tuple[dict[str, Mapping[str, object]], dict[str, Mapping[str, object]], dict[str, Mapping[str, object]]]:
+    diagnostics["venue_provider"] = settings.venue_provider
+    diagnostics["venue_quote_status"] = "not_requested" if not symbols else "pending"
+    diagnostics["venue_quote_count"] = 0
+    diagnostics["venue_product_count"] = 0
+    diagnostics["venue_orderbook_count"] = 0
+    if not symbols:
+        diagnostics["venue_quote_status"] = "no_symbols"
+        return {}, {}, {}
 
-    provider = robinhood_provider or RobinhoodCryptoProvider(settings)
+    provider = venue_provider or KrakenVenueProvider(settings)
     try:
         products = dict(provider.get_products(symbols))  # type: ignore[attr-defined]
         quotes = dict(provider.get_quotes(symbols))  # type: ignore[attr-defined]
+        orderbooks = dict(provider.get_orderbooks(symbols))  # type: ignore[attr-defined]
     except Exception as exc:
-        diagnostics["robinhood_quote_status"] = "error"
-        diagnostics["robinhood_quote_error"] = str(exc)
-        return {}, {}
+        diagnostics["venue_quote_status"] = "error"
+        diagnostics["venue_quote_error"] = str(exc)
+        return {}, {}, {}
 
-    diagnostics["robinhood_quote_status"] = "ok"
-    diagnostics["robinhood_product_count"] = len(products)
-    diagnostics["robinhood_quote_count"] = len(quotes)
-    return products, quotes
+    diagnostics["venue_quote_status"] = "ok"
+    diagnostics["venue_product_count"] = len(products)
+    diagnostics["venue_quote_count"] = len(quotes)
+    diagnostics["venue_orderbook_count"] = len(orderbooks)
+    return products, quotes, orderbooks
 
 
-def _robinhood_features(
+def _venue_features(
     symbol: str,
     alpaca_price: float,
     quote: Mapping[str, object],
     product: Mapping[str, object],
+    orderbook: Mapping[str, object],
     settings: AppSettings,
 ) -> dict[str, object]:
-    status = "disabled" if not settings.robinhood_quote_gate_enabled else "missing_credentials"
+    status = "missing_quote"
     if quote:
         status = "ok"
-    elif settings.robinhood_quote_gate_ready:
-        status = "missing_quote"
 
     bid = _float_value(quote.get("bid"))
     ask = _float_value(quote.get("ask"))
@@ -263,9 +270,21 @@ def _robinhood_features(
     quote_age = _quote_age_seconds(quote_time) if quote_time else None
     tradable = bool(product.get("tradable")) if product else False
     deviation = abs(alpaca_price - mid) / alpaca_price * 100 if alpaca_price > 0 and mid > 0 else 999.0
+    depth_notional = _float_value(orderbook.get("venue_depth_notional"))
+    depth_bid_notional = _float_value(orderbook.get("venue_depth_bid_notional"))
+    depth_ask_notional = _float_value(orderbook.get("venue_depth_ask_notional"))
+    depth_bps = _float_value(orderbook.get("venue_depth_bps")) or settings.crypto_depth_bps
+    venue_symbol = str(
+        quote.get("venue_symbol")
+        or product.get("venue_symbol")
+        or orderbook.get("venue_symbol")
+        or symbol
+    )
     snapshot = {
         "symbol": symbol,
-        "rh_symbol": quote.get("rh_symbol") or product.get("rh_symbol"),
+        "venue_name": "Kraken",
+        "venue_symbol": venue_symbol,
+        "kraken_pair": quote.get("kraken_pair") or product.get("kraken_pair") or orderbook.get("kraken_pair"),
         "bid": bid,
         "ask": ask,
         "mid": mid,
@@ -274,20 +293,30 @@ def _robinhood_features(
         "quote_age_seconds": quote_age,
         "tradable": tradable,
         "status": status,
+        "depth_notional": depth_notional,
+        "depth_bid_notional": depth_bid_notional,
+        "depth_ask_notional": depth_ask_notional,
+        "depth_bps": depth_bps,
         "alpaca_price": alpaca_price,
-        "alpaca_rh_price_deviation_pct": deviation,
+        "alpaca_venue_price_deviation_pct": deviation,
     }
     return {
-        "rh_bid": bid,
-        "rh_ask": ask,
-        "rh_mid": mid,
-        "rh_spread_pct": spread_pct,
-        "rh_quote_time": quote_time,
-        "rh_quote_age_seconds": quote_age,
-        "rh_tradable": tradable,
-        "rh_quote_status": status,
-        "robinhood_quote_snapshot": snapshot,
-        "alpaca_rh_price_deviation_pct": deviation,
+        "venue_name": "Kraken",
+        "venue_symbol": venue_symbol,
+        "venue_bid": bid,
+        "venue_ask": ask,
+        "venue_mid": mid,
+        "venue_spread_pct": spread_pct,
+        "venue_quote_time": quote_time,
+        "venue_quote_age_seconds": quote_age,
+        "venue_tradable": tradable,
+        "venue_quote_status": status,
+        "venue_depth_notional": depth_notional,
+        "venue_depth_bid_notional": depth_bid_notional,
+        "venue_depth_ask_notional": depth_ask_notional,
+        "venue_depth_bps": depth_bps,
+        "venue_quote_snapshot": snapshot,
+        "alpaca_venue_price_deviation_pct": deviation,
     }
 
 

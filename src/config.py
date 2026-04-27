@@ -60,13 +60,12 @@ class AppSettings:
     crypto_max_spread_pct: float = 0.35
     crypto_min_orderbook_notional_depth: float = 25_000.0
     crypto_depth_bps: float = 25.0
-    robinhood_crypto_api_key: str = ""
-    robinhood_crypto_private_key: str = ""
-    robinhood_crypto_base_url: str = "https://trading.robinhood.com"
-    robinhood_quote_gate_enabled: bool = True
-    robinhood_max_spread_pct: float = 0.35
-    robinhood_max_quote_age_seconds: int = 10
-    max_alpaca_rh_deviation_pct: float = 0.50
+    venue_provider: str = "kraken"
+    kraken_base_url: str = "https://api.kraken.com"
+    kraken_max_spread_pct: float = 0.35
+    kraken_max_quote_age_seconds: int = 30
+    max_alpaca_venue_deviation_pct: float = 0.50
+    kraken_min_orderbook_notional_depth: float = 25_000.0
     turso_database_url: str = ""
     turso_auth_token: str = ""
     db_path: Path = DB_PATH
@@ -91,8 +90,8 @@ class AppSettings:
         )
 
     @property
-    def robinhood_quote_gate_ready(self) -> bool:
-        return bool(self.robinhood_crypto_api_key and self.robinhood_crypto_private_key)
+    def venue_quote_gate_ready(self) -> bool:
+        return self.venue_provider.lower() == "kraken" and bool(self.kraken_base_url)
 
 
 def _float_env(name: str, default: float) -> float:
@@ -172,13 +171,12 @@ def get_settings() -> AppSettings:
         crypto_max_spread_pct=_float_env("CRYPTO_MAX_SPREAD_PCT", 0.35),
         crypto_min_orderbook_notional_depth=_float_env("CRYPTO_MIN_ORDERBOOK_NOTIONAL_DEPTH", 25_000.0),
         crypto_depth_bps=_float_env("CRYPTO_DEPTH_BPS", 25.0),
-        robinhood_crypto_api_key=_setting("ROBINHOOD_CRYPTO_API_KEY"),
-        robinhood_crypto_private_key=_setting("ROBINHOOD_CRYPTO_PRIVATE_KEY"),
-        robinhood_crypto_base_url=_setting("ROBINHOOD_CRYPTO_BASE_URL", "https://trading.robinhood.com"),
-        robinhood_quote_gate_enabled=_bool_env("ROBINHOOD_QUOTE_GATE_ENABLED", True),
-        robinhood_max_spread_pct=_float_env("ROBINHOOD_MAX_SPREAD_PCT", 0.35),
-        robinhood_max_quote_age_seconds=_int_env("ROBINHOOD_MAX_QUOTE_AGE_SECONDS", 10),
-        max_alpaca_rh_deviation_pct=_float_env("MAX_ALPACA_RH_DEVIATION_PCT", 0.50),
+        venue_provider=_setting("VENUE_PROVIDER", "kraken").lower(),
+        kraken_base_url=_setting("KRAKEN_BASE_URL", "https://api.kraken.com").rstrip("/"),
+        kraken_max_spread_pct=_float_env("KRAKEN_MAX_SPREAD_PCT", 0.35),
+        kraken_max_quote_age_seconds=_int_env("KRAKEN_MAX_QUOTE_AGE_SECONDS", 30),
+        max_alpaca_venue_deviation_pct=_float_env("MAX_ALPACA_VENUE_DEVIATION_PCT", 0.50),
+        kraken_min_orderbook_notional_depth=_float_env("KRAKEN_MIN_ORDERBOOK_NOTIONAL_DEPTH", 25_000.0),
         turso_database_url=_setting("TURSO_DATABASE_URL"),
         turso_auth_token=_setting("TURSO_AUTH_TOKEN"),
         db_path=Path(_setting("NIGHT_HUNTER_DB_PATH", str(DB_PATH))),

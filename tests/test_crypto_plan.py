@@ -80,15 +80,22 @@ class FakeCryptoProvider(BaseMarketDataProvider):
         raise NotImplementedError
 
 
-class FakeRobinhoodProvider:
-    def __init__(self, tradable: bool = True, bid: float = 104.95, ask: float = 105.05) -> None:
+class FakeVenueProvider:
+    def __init__(
+        self,
+        tradable: bool = True,
+        bid: float = 104.95,
+        ask: float = 105.05,
+        depth_notional: float = 75_000,
+    ) -> None:
         self.tradable = tradable
         self.bid = bid
         self.ask = ask
+        self.depth_notional = depth_notional
 
     def get_products(self, symbols: Sequence[str]):
         return {
-            symbol: {"symbol": symbol, "rh_symbol": symbol.replace("/", "-"), "tradable": self.tradable}
+            symbol: {"symbol": symbol, "venue_symbol": symbol.replace("BTC", "XBT"), "tradable": self.tradable}
             for symbol in symbols
         }
 
@@ -99,7 +106,7 @@ class FakeRobinhoodProvider:
         return {
             symbol: {
                 "symbol": symbol,
-                "rh_symbol": symbol.replace("/", "-"),
+                "venue_symbol": symbol.replace("BTC", "XBT"),
                 "bid": self.bid,
                 "ask": self.ask,
                 "mid": mid,
@@ -109,10 +116,24 @@ class FakeRobinhoodProvider:
             for symbol in symbols
         }
 
+    def get_orderbooks(self, symbols: Sequence[str]):
+        return {
+            symbol: {
+                "symbol": symbol,
+                "venue_symbol": symbol.replace("BTC", "XBT"),
+                "venue_depth_notional": self.depth_notional,
+                "venue_depth_bid_notional": self.depth_notional,
+                "venue_depth_ask_notional": self.depth_notional,
+                "venue_depth_bps": 25,
+                "quote_time": datetime.now(timezone.utc).isoformat(),
+            }
+            for symbol in symbols
+        }
+
 
 def test_crypto_scan_uses_daily_cache_and_skips_news() -> None:
     provider = FakeCryptoProvider(count=8)
-    robinhood = FakeRobinhoodProvider()
+    venue = FakeVenueProvider()
     settings = AppSettings(
         alpaca_api_key="key",
         alpaca_secret_key="secret",
@@ -122,8 +143,8 @@ def test_crypto_scan_uses_daily_cache_and_skips_news() -> None:
         min_score=1.0,
     )
 
-    first = run_scan(provider=provider, robinhood_provider=robinhood, settings=settings, persist=False)
-    second = run_scan(provider=provider, robinhood_provider=robinhood, settings=settings, persist=False)
+    first = run_scan(provider=provider, venue_provider=venue, settings=settings, persist=False)
+    second = run_scan(provider=provider, venue_provider=venue, settings=settings, persist=False)
 
     assert provider.asset_calls == 1
     assert provider.daily_bar_calls == 1
@@ -138,8 +159,8 @@ def test_crypto_scan_uses_daily_cache_and_skips_news() -> None:
     assert first["diagnostics"]["universe_size"] == 8
     assert first["diagnostics"]["feature_rows"] == 8
     assert first["diagnostics"]["alpaca_depth_eligible_count"] == 8
-    assert first["diagnostics"]["robinhood_quote_status"] == "ok"
-    assert first["diagnostics"]["robinhood_quote_count"] == 8
+    assert first["diagnostics"]["venue_quote_status"] == "ok"
+    assert first["diagnostics"]["venue_quote_count"] == 8
     assert first["diagnostics"]["final_trading_universe_size"] == 8
     assert second["diagnostics"]["cache_source"] == "hit"
     assert first["diagnostics"]["scan_mode"] == "crypto_rolling"
@@ -149,7 +170,7 @@ def test_crypto_scan_uses_daily_cache_and_skips_news() -> None:
 
 def test_crypto_scan_labels_rows_and_trade_card_as_alpaca_crypto() -> None:
     provider = FakeCryptoProvider(count=5)
-    robinhood = FakeRobinhoodProvider()
+    venue = FakeVenueProvider()
     settings = AppSettings(
         alpaca_api_key="key",
         alpaca_secret_key="secret",
@@ -159,7 +180,7 @@ def test_crypto_scan_labels_rows_and_trade_card_as_alpaca_crypto() -> None:
         min_score=1.0,
     )
 
-    result = run_scan(provider=provider, robinhood_provider=robinhood, settings=settings, persist=False)
+    result = run_scan(provider=provider, venue_provider=venue, settings=settings, persist=False)
 
     assert result["feed"] == "crypto"
     assert result["data_confidence"] == "Alpaca Crypto"
@@ -168,13 +189,14 @@ def test_crypto_scan_labels_rows_and_trade_card_as_alpaca_crypto() -> None:
     assert result["rows"][0]["settings_snapshot"]["market_mode"] == "crypto"
     assert result["trade_card"]["data_confidence"] == "Alpaca Crypto"
     assert result["trade_card"]["verdict"] == "Valid Trade"
-    assert result["trade_card"]["rh_ask"] == 105.05
+    assert result["trade_card"]["venue_ask"] == 105.05
+    assert result["trade_card"]["venue_depth_notional"] >= settings.kraken_min_orderbook_notional_depth
     assert result["trade_card"]["alpaca_depth_notional"] >= settings.crypto_min_orderbook_notional_depth
     assert result["trade_card"]["settings_snapshot"]["data_confidence"] == "Alpaca Crypto"
     assert result["diagnostics"]["min_quote_volume"] == 50000.0
 
 
-def test_crypto_scan_without_robinhood_credentials_returns_invalid_venue_rows() -> None:
+def test_crypto_scan_missing_kraken_quote_returns_invalid_venue_rows() -> None:
     provider = FakeCryptoProvider(count=3)
     settings = AppSettings(
         alpaca_api_key="key",
@@ -184,12 +206,12 @@ def test_crypto_scan_without_robinhood_credentials_returns_invalid_venue_rows() 
         shortlist_size=3,
     )
 
-    result = run_scan(provider=provider, settings=settings, persist=False)
+    result = run_scan(provider=provider, venue_provider=EmptyVenueProvider(), settings=settings, persist=False)
 
     assert result["rows"]
-    assert result["diagnostics"]["robinhood_quote_status"] == "missing_credentials"
+    assert result["diagnostics"]["venue_quote_status"] == "ok"
     assert result["trade_card"]["verdict"] == "Invalid"
-    assert "Robinhood venue confirmation missing." in result["trade_card"]["veto_reasons"]
+    assert "Kraken venue confirmation missing." in result["trade_card"]["veto_reasons"]
 
 
 def test_empty_crypto_scan_returns_diagnostics_without_candidates() -> None:
@@ -236,7 +258,7 @@ def test_low_depth_pairs_are_excluded_before_ranking() -> None:
         crypto_min_orderbook_notional_depth=25_000,
     )
 
-    result = run_scan(provider=provider, robinhood_provider=FakeRobinhoodProvider(), settings=settings, persist=False)
+    result = run_scan(provider=provider, venue_provider=FakeVenueProvider(), settings=settings, persist=False)
 
     assert result["rows"] == []
     assert result["diagnostics"]["feature_rows"] == 3
@@ -252,6 +274,17 @@ def test_watch_shortlist_caps_streamed_symbols_at_30() -> None:
     assert len(provider.streamed_symbols) == 30
     assert provider.streamed_symbols[0] == "PAIR0/USD"
     assert provider.streamed_symbols[-1] == "PAIR29/USD"
+
+
+class EmptyVenueProvider(FakeVenueProvider):
+    def get_products(self, symbols: Sequence[str]):
+        return {}
+
+    def get_quotes(self, symbols: Sequence[str]):
+        return {}
+
+    def get_orderbooks(self, symbols: Sequence[str]):
+        return {}
 
 
 def _minute_bars() -> list[dict[str, object]]:

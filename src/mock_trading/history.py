@@ -18,6 +18,11 @@ def build_trade_history_rows(
         trade_id = int(trade["id"])
         settings = _json_object(trade.get("settings_json"))
         card = _json_object(trade.get("card_json"))
+        venue_bid = card.get("venue_bid", card.get("rh_bid"))
+        venue_ask = card.get("venue_ask", card.get("rh_ask"))
+        venue_spread_pct = card.get("venue_spread_pct", card.get("rh_spread_pct"))
+        venue_quote_time = card.get("venue_quote_time", card.get("rh_quote_time"))
+        venue_deviation = card.get("alpaca_venue_price_deviation_pct", card.get("alpaca_rh_price_deviation_pct"))
         weights = settings.get("score_weights") if isinstance(settings.get("score_weights"), Mapping) else {}
         trade_fills = fills_by_trade.get(trade_id, [])
         fill_summary = ", ".join(
@@ -50,11 +55,15 @@ def build_trade_history_rows(
                 "notes": trade.get("notes"),
                 "fills": len(trade_fills),
                 "fill_summary": fill_summary,
-                "rh_bid": card.get("rh_bid"),
-                "rh_ask": card.get("rh_ask"),
-                "rh_spread_pct": card.get("rh_spread_pct"),
-                "rh_quote_time": card.get("rh_quote_time"),
-                "alpaca_rh_price_deviation_pct": card.get("alpaca_rh_price_deviation_pct"),
+                "venue_name": card.get("venue_name") or ("Robinhood" if "rh_ask" in card else None),
+                "venue_symbol": card.get("venue_symbol"),
+                "venue_bid": venue_bid,
+                "venue_ask": venue_ask,
+                "venue_spread_pct": venue_spread_pct,
+                "venue_quote_time": venue_quote_time,
+                "venue_depth_notional": card.get("venue_depth_notional"),
+                "venue_depth_bps": card.get("venue_depth_bps"),
+                "alpaca_venue_price_deviation_pct": venue_deviation,
                 "alpaca_depth_notional": card.get("alpaca_depth_notional"),
                 "alpaca_depth_bps": card.get("alpaca_depth_bps"),
                 "feed": settings.get("feed") or settings.get("alpaca_feed") or card.get("feed"),
@@ -66,10 +75,15 @@ def build_trade_history_rows(
                 "settings_crypto_max_spread_pct": settings.get("crypto_max_spread_pct"),
                 "settings_crypto_min_orderbook_notional_depth": settings.get("crypto_min_orderbook_notional_depth"),
                 "settings_crypto_depth_bps": settings.get("crypto_depth_bps"),
-                "settings_robinhood_quote_gate": settings.get("robinhood_quote_gate_enabled"),
-                "settings_robinhood_max_spread_pct": settings.get("robinhood_max_spread_pct"),
-                "settings_robinhood_max_quote_age": settings.get("robinhood_max_quote_age_seconds"),
-                "settings_max_alpaca_rh_deviation_pct": settings.get("max_alpaca_rh_deviation_pct"),
+                "settings_venue_provider": settings.get("venue_provider"),
+                "settings_kraken_max_spread_pct": settings.get("kraken_max_spread_pct"),
+                "settings_kraken_max_quote_age": settings.get("kraken_max_quote_age_seconds"),
+                "settings_kraken_min_orderbook_notional_depth": settings.get("kraken_min_orderbook_notional_depth"),
+                "settings_max_alpaca_venue_deviation_pct": settings.get("max_alpaca_venue_deviation_pct"),
+                "settings_legacy_robinhood_quote_gate": settings.get("robinhood_quote_gate_enabled"),
+                "settings_legacy_robinhood_max_spread_pct": settings.get("robinhood_max_spread_pct"),
+                "settings_legacy_robinhood_max_quote_age": settings.get("robinhood_max_quote_age_seconds"),
+                "settings_legacy_max_alpaca_rh_deviation_pct": settings.get("max_alpaca_rh_deviation_pct"),
                 "settings_min_score": settings.get("min_score"),
                 "settings_alert_score": settings.get("alert_score"),
                 "settings_shortlist_size": settings.get("shortlist_size"),

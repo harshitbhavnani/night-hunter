@@ -200,8 +200,8 @@ def test_trade_history_uses_mock_trades_and_fills() -> None:
     assert rows[0]["fill_summary"] == "target_1 75.00000000 @ 10.500000"
     assert rows[0]["settings_min_score"] == 7.5
     assert rows[0]["settings_crypto_max_spread_pct"] == 0.35
-    assert rows[0]["rh_ask"] == 10.01
-    assert rows[0]["rh_spread_pct"] == 0.2
+    assert rows[0]["venue_ask"] == 10.01
+    assert rows[0]["venue_spread_pct"] == 0.2
     assert rows[0]["weight_acceleration"] == 0.30
 
 
@@ -215,11 +215,15 @@ def _create_trade(entered_at: datetime, settings_snapshot: Mapping[str, object] 
             "score": 8.5,
             "card": {
                 "ticker": "TEST",
-                "rh_bid": 9.99,
-                "rh_ask": 10.01,
-                "rh_spread_pct": 0.2,
-                "rh_quote_time": entered_at.isoformat(),
-                "alpaca_rh_price_deviation_pct": 0.1,
+                "venue_name": "Kraken",
+                "venue_symbol": "TEST/USD",
+                "venue_bid": 9.99,
+                "venue_ask": 10.01,
+                "venue_spread_pct": 0.2,
+                "venue_quote_time": entered_at.isoformat(),
+                "venue_depth_notional": 50_000,
+                "venue_depth_bps": 25,
+                "alpaca_venue_price_deviation_pct": 0.1,
             },
             "dollar_amount": 1000,
             "entry": 10.0,

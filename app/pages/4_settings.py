@@ -87,7 +87,7 @@ with st.form("settings"):
         min_value=0.0,
         value=float(settings.crypto_min_orderbook_notional_depth),
         step=5_000.0,
-        help="Minimum bid/ask notional depth inside the configured BPS window. This is an Alpaca proxy, not Robinhood depth.",
+        help="Minimum Alpaca bid/ask notional depth inside the configured BPS window. This is an early proxy, not the final venue gate.",
     )
     crypto_depth_bps = depth_cols[1].number_input(
         "Depth BPS window",
@@ -97,34 +97,41 @@ with st.form("settings"):
         step=1.0,
     )
 
-    st.subheader("Robinhood Quote Gate")
-    st.caption("Robinhood is the execution venue check. Orders are still disabled; this only validates live quotes.")
-    robinhood_quote_gate_enabled = st.toggle("Require Robinhood venue confirmation", value=bool(settings.robinhood_quote_gate_enabled))
-    rh_cols = st.columns(3)
-    robinhood_max_spread_pct = rh_cols[0].number_input(
-        "Robinhood max spread %",
+    st.subheader("Kraken Venue Gate")
+    st.caption("Kraken public market data is the execution venue check. Orders are still disabled; this only validates quotes and depth.")
+    venue_provider = st.selectbox("Venue provider", ["kraken"], index=0)
+    kraken_base_url = st.text_input("Kraken base URL", value=settings.kraken_base_url)
+    venue_cols = st.columns(4)
+    kraken_max_spread_pct = venue_cols[0].number_input(
+        "Kraken max spread %",
         min_value=0.01,
         max_value=5.0,
-        value=float(settings.robinhood_max_spread_pct),
+        value=float(settings.kraken_max_spread_pct),
         step=0.05,
     )
-    robinhood_max_quote_age_seconds = rh_cols[1].number_input(
+    kraken_max_quote_age_seconds = venue_cols[1].number_input(
         "Max quote age seconds",
         min_value=1,
         max_value=120,
-        value=int(settings.robinhood_max_quote_age_seconds),
+        value=int(settings.kraken_max_quote_age_seconds),
         step=1,
     )
-    max_alpaca_rh_deviation_pct = rh_cols[2].number_input(
-        "Max Alpaca/RH deviation %",
+    max_alpaca_venue_deviation_pct = venue_cols[2].number_input(
+        "Max Alpaca/Kraken deviation %",
         min_value=0.01,
         max_value=5.0,
-        value=float(settings.max_alpaca_rh_deviation_pct),
+        value=float(settings.max_alpaca_venue_deviation_pct),
         step=0.05,
+    )
+    kraken_min_orderbook_notional_depth = venue_cols[3].number_input(
+        "Min Kraken depth $",
+        min_value=0.0,
+        value=float(settings.kraken_min_orderbook_notional_depth),
+        step=5_000.0,
     )
 
     st.subheader("Provider")
-    st.caption("Night Hunter uses Alpaca for historical bars and Robinhood for venue quote validation.")
+    st.caption("Night Hunter uses Alpaca for historical bars and Kraken for public venue quote/depth validation.")
     submitted = st.form_submit_button("Apply Settings", type="primary")
 
 if submitted:
@@ -143,10 +150,12 @@ if submitted:
         "crypto_max_spread_pct": crypto_max_spread_pct,
         "crypto_min_orderbook_notional_depth": crypto_min_orderbook_notional_depth,
         "crypto_depth_bps": crypto_depth_bps,
-        "robinhood_quote_gate_enabled": robinhood_quote_gate_enabled,
-        "robinhood_max_spread_pct": robinhood_max_spread_pct,
-        "robinhood_max_quote_age_seconds": robinhood_max_quote_age_seconds,
-        "max_alpaca_rh_deviation_pct": max_alpaca_rh_deviation_pct,
+        "venue_provider": venue_provider,
+        "kraken_base_url": kraken_base_url,
+        "kraken_max_spread_pct": kraken_max_spread_pct,
+        "kraken_max_quote_age_seconds": kraken_max_quote_age_seconds,
+        "kraken_min_orderbook_notional_depth": kraken_min_orderbook_notional_depth,
+        "max_alpaca_venue_deviation_pct": max_alpaca_venue_deviation_pct,
         "weight_rvol": weight_rvol,
         "weight_acceleration": weight_acceleration,
         "weight_breakout": weight_breakout,
@@ -166,8 +175,9 @@ st.write(
         "Crypto location": settings.crypto_location,
         "Safe fallback pairs": ", ".join(settings.crypto_symbols),
         "Credentials loaded": bool(settings.alpaca_api_key and settings.alpaca_secret_key),
-        "Robinhood credentials loaded": settings.robinhood_quote_gate_ready,
-        "Robinhood quote gate": settings.robinhood_quote_gate_enabled,
+        "Venue provider": settings.venue_provider,
+        "Kraken public data": settings.venue_quote_gate_ready,
+        "Kraken base URL": settings.kraken_base_url,
         "Turso configured": bool(settings.turso_database_url and settings.turso_auth_token),
         "Database": str(settings.db_path),
         "Data confidence": "Alpaca Crypto",
@@ -176,8 +186,9 @@ st.write(
         "Max spread %": settings.crypto_max_spread_pct,
         "Min Alpaca depth proxy $": settings.crypto_min_orderbook_notional_depth,
         "Depth BPS window": settings.crypto_depth_bps,
-        "Robinhood max spread %": settings.robinhood_max_spread_pct,
-        "Robinhood max quote age seconds": settings.robinhood_max_quote_age_seconds,
-        "Max Alpaca/RH deviation %": settings.max_alpaca_rh_deviation_pct,
+        "Kraken max spread %": settings.kraken_max_spread_pct,
+        "Kraken max quote age seconds": settings.kraken_max_quote_age_seconds,
+        "Kraken min depth $": settings.kraken_min_orderbook_notional_depth,
+        "Max Alpaca/Kraken deviation %": settings.max_alpaca_venue_deviation_pct,
     }
 )

@@ -33,13 +33,14 @@ def test_veto_engine_allows_crypto_without_catalyst() -> None:
             "distance_from_vwap_pct": 3.0,
             "spread_pct": 0.08,
             "alpaca_depth_notional": 50_000,
-            "rh_quote_status": "ok",
-            "rh_tradable": True,
-            "rh_bid": 99.9,
-            "rh_ask": 100.1,
-            "rh_spread_pct": 0.2,
-            "rh_quote_age_seconds": 2,
-            "alpaca_rh_price_deviation_pct": 0.1,
+            "venue_quote_status": "ok",
+            "venue_tradable": True,
+            "venue_bid": 99.9,
+            "venue_ask": 100.1,
+            "venue_spread_pct": 0.2,
+            "venue_quote_age_seconds": 2,
+            "venue_depth_notional": 50_000,
+            "alpaca_venue_price_deviation_pct": 0.1,
         }
     )
 
@@ -72,25 +73,25 @@ def test_veto_engine_rejects_low_depth_crypto_pair() -> None:
     assert any("depth proxy" in reason for reason in result.reasons)
 
 
-def test_veto_engine_rejects_stale_robinhood_quote() -> None:
-    result = apply_veto_logic(_crypto_candidate(rh_quote_age_seconds=60))
+def test_veto_engine_rejects_stale_kraken_quote() -> None:
+    result = apply_veto_logic(_crypto_candidate(venue_quote_age_seconds=60))
 
     assert result.valid is False
-    assert any("Robinhood quote stale" in reason for reason in result.reasons)
+    assert any("Kraken quote stale" in reason for reason in result.reasons)
 
 
-def test_veto_engine_rejects_non_tradable_robinhood_asset() -> None:
-    result = apply_veto_logic(_crypto_candidate(rh_tradable=False))
-
-    assert result.valid is False
-    assert any("not tradable on Robinhood" in reason for reason in result.reasons)
-
-
-def test_veto_engine_rejects_alpaca_robinhood_deviation() -> None:
-    result = apply_veto_logic(_crypto_candidate(alpaca_rh_price_deviation_pct=1.5))
+def test_veto_engine_rejects_non_tradable_kraken_asset() -> None:
+    result = apply_veto_logic(_crypto_candidate(venue_tradable=False))
 
     assert result.valid is False
-    assert any("Alpaca/Robinhood price deviation" in reason for reason in result.reasons)
+    assert any("not tradable on Kraken" in reason for reason in result.reasons)
+
+
+def test_veto_engine_rejects_alpaca_kraken_deviation() -> None:
+    result = apply_veto_logic(_crypto_candidate(alpaca_venue_price_deviation_pct=1.5))
+
+    assert result.valid is False
+    assert any("Alpaca/Kraken price deviation" in reason for reason in result.reasons)
 
 
 def test_veto_engine_rejects_exhausted_candidate() -> None:
@@ -123,13 +124,14 @@ def _crypto_candidate(**overrides: object) -> dict[str, object]:
         "distance_from_vwap_pct": 3.0,
         "spread_pct": 0.08,
         "alpaca_depth_notional": 50_000,
-        "rh_quote_status": "ok",
-        "rh_tradable": True,
-        "rh_bid": 99.9,
-        "rh_ask": 100.1,
-        "rh_spread_pct": 0.2,
-        "rh_quote_age_seconds": 2,
-        "alpaca_rh_price_deviation_pct": 0.1,
+        "venue_quote_status": "ok",
+        "venue_tradable": True,
+        "venue_bid": 99.9,
+        "venue_ask": 100.1,
+        "venue_spread_pct": 0.2,
+        "venue_quote_age_seconds": 2,
+        "venue_depth_notional": 50_000,
+        "alpaca_venue_price_deviation_pct": 0.1,
     }
     candidate.update(overrides)
     return candidate

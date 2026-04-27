@@ -44,19 +44,22 @@ def test_execution_engine_can_generate_card_for_selected_ticker() -> None:
     assert card.score == 8.1
 
 
-def test_execution_engine_uses_robinhood_ask_for_crypto_entry() -> None:
+def test_execution_engine_uses_kraken_ask_for_crypto_entry() -> None:
     row = {
         **_valid_row("BTC/USD", 8.6),
         "asset_class": "crypto",
         "price": 100.0,
-        "rh_bid": 100.4,
-        "rh_ask": 100.6,
-        "rh_mid": 100.5,
-        "rh_spread_pct": 0.2,
-        "rh_quote_status": "ok",
-        "rh_tradable": True,
-        "rh_quote_age_seconds": 1,
-        "alpaca_rh_price_deviation_pct": 0.5,
+        "venue_name": "Kraken",
+        "venue_symbol": "XBT/USD",
+        "venue_bid": 100.4,
+        "venue_ask": 100.6,
+        "venue_mid": 100.5,
+        "venue_spread_pct": 0.2,
+        "venue_quote_status": "ok",
+        "venue_tradable": True,
+        "venue_quote_age_seconds": 1,
+        "venue_depth_notional": 50_000,
+        "alpaca_venue_price_deviation_pct": 0.5,
         "alpaca_depth_notional": 50_000,
         "alpaca_depth_proxy_ok": True,
     }
@@ -66,7 +69,8 @@ def test_execution_engine_uses_robinhood_ask_for_crypto_entry() -> None:
     assert card is not None
     assert card.verdict == "Valid Trade"
     assert card.entry == 100.6
-    assert card.as_dict()["rh_ask"] == 100.6
+    assert card.as_dict()["venue_ask"] == 100.6
+    assert card.as_dict()["venue_name"] == "Kraken"
     assert card.as_dict()["alpaca_depth_proxy_ok"] is True
 
 

@@ -28,9 +28,10 @@ TABLE_COLUMNS = {
     "spread_pct": "Alpaca Spread %",
     "alpaca_depth_notional": "Depth Proxy",
     "alpaca_depth_proxy_ok": "Depth OK",
-    "rh_spread_pct": "RH Spread %",
-    "rh_tradable": "RH Tradable",
-    "rh_quote_status": "RH Status",
+    "venue_spread_pct": "Kraken Spread %",
+    "venue_depth_notional": "Kraken Depth",
+    "venue_tradable": "Kraken Tradable",
+    "venue_quote_status": "Venue Status",
     "score": "Score",
     "verdict": "Verdict",
     "data_confidence": "Data",
@@ -76,13 +77,17 @@ def effective_settings() -> AppSettings:
             payload.get("crypto_min_orderbook_notional_depth", base.crypto_min_orderbook_notional_depth)
         ),
         crypto_depth_bps=float(payload.get("crypto_depth_bps", base.crypto_depth_bps)),
-        robinhood_quote_gate_enabled=bool(payload.get("robinhood_quote_gate_enabled", base.robinhood_quote_gate_enabled)),
-        robinhood_max_spread_pct=float(payload.get("robinhood_max_spread_pct", base.robinhood_max_spread_pct)),
-        robinhood_max_quote_age_seconds=int(
-            payload.get("robinhood_max_quote_age_seconds", base.robinhood_max_quote_age_seconds)
+        venue_provider=str(payload.get("venue_provider", base.venue_provider)).lower(),
+        kraken_base_url=str(payload.get("kraken_base_url", base.kraken_base_url)).rstrip("/"),
+        kraken_max_spread_pct=float(payload.get("kraken_max_spread_pct", base.kraken_max_spread_pct)),
+        kraken_max_quote_age_seconds=int(
+            payload.get("kraken_max_quote_age_seconds", base.kraken_max_quote_age_seconds)
         ),
-        max_alpaca_rh_deviation_pct=float(
-            payload.get("max_alpaca_rh_deviation_pct", base.max_alpaca_rh_deviation_pct)
+        kraken_min_orderbook_notional_depth=float(
+            payload.get("kraken_min_orderbook_notional_depth", base.kraken_min_orderbook_notional_depth)
+        ),
+        max_alpaca_venue_deviation_pct=float(
+            payload.get("max_alpaca_venue_deviation_pct", base.max_alpaca_venue_deviation_pct)
         ),
         score_weights=weights,
     )
@@ -105,13 +110,14 @@ def scan_dataframe(rows: list[Mapping[str, object]]) -> pd.DataFrame:
         "Acceleration",
         "Alpaca Spread %",
         "Depth Proxy",
-        "RH Spread %",
+        "Kraken Spread %",
+        "Kraken Depth",
         "Score",
     ]
     for column in numeric:
         frame[column] = pd.to_numeric(frame[column], errors="coerce").round(2)
     frame["Depth OK"] = frame["Depth OK"].map(lambda value: "Yes" if value else "No")
-    frame["RH Tradable"] = frame["RH Tradable"].map(lambda value: "Yes" if value else "No")
+    frame["Kraken Tradable"] = frame["Kraken Tradable"].map(lambda value: "Yes" if value else "No")
     return frame
 
 
@@ -162,7 +168,8 @@ def render_scan_diagnostics(result: Mapping[str, object] | None) -> None:
             ("Quote Vol Eligible", diagnostics.get("quote_volume_eligible_count", diagnostics.get("volume_eligible_count"))),
             ("Alpaca Spread OK", diagnostics.get("alpaca_spread_eligible_count")),
             ("Depth OK", diagnostics.get("alpaca_depth_eligible_count")),
-            ("RH Tradable", diagnostics.get("robinhood_tradable_count")),
+            ("Kraken Tradable", diagnostics.get("venue_tradable_count")),
+            ("Kraken Depth OK", diagnostics.get("venue_depth_eligible_count")),
             ("Trading Universe", diagnostics.get("final_trading_universe_size", diagnostics.get("universe_size"))),
             ("1m Bars", diagnostics.get("symbols_with_1min_bars")),
             ("Feature Rows", diagnostics.get("feature_rows")),
@@ -187,12 +194,14 @@ def render_scan_diagnostics(result: Mapping[str, object] | None) -> None:
                 "depth_bps": diagnostics.get("depth_bps"),
                 "alpaca_orderbook_count": diagnostics.get("alpaca_orderbook_count"),
                 "news_symbols_fetched": diagnostics.get("news_symbols_fetched"),
-                "robinhood_quote_gate_enabled": diagnostics.get("robinhood_quote_gate_enabled"),
-                "robinhood_quote_status": diagnostics.get("robinhood_quote_status"),
-                "robinhood_quote_count": diagnostics.get("robinhood_quote_count"),
-                "robinhood_product_count": diagnostics.get("robinhood_product_count"),
-                "robinhood_spread_eligible_count": diagnostics.get("robinhood_spread_eligible_count"),
-                "robinhood_gate_applied": diagnostics.get("robinhood_gate_applied"),
+                "venue_provider": diagnostics.get("venue_provider"),
+                "venue_quote_status": diagnostics.get("venue_quote_status"),
+                "venue_quote_count": diagnostics.get("venue_quote_count"),
+                "venue_product_count": diagnostics.get("venue_product_count"),
+                "venue_orderbook_count": diagnostics.get("venue_orderbook_count"),
+                "venue_spread_eligible_count": diagnostics.get("venue_spread_eligible_count"),
+                "venue_depth_eligible_count": diagnostics.get("venue_depth_eligible_count"),
+                "venue_gate_applied": diagnostics.get("venue_gate_applied"),
                 "asset_discovery_error": diagnostics.get("asset_discovery_error"),
                 "cache_created_at": diagnostics.get("cache_created_at"),
             }
@@ -218,7 +227,7 @@ def render_trade_card(card: Mapping[str, object] | None) -> None:
         st.caption("Best candidate failed one or more hard rules.")
         st.write("\n".join(f"- {reason}" for reason in reasons))
         render_alpaca_depth_proxy_check(card)
-        render_robinhood_venue_check(card)
+        render_venue_check(card)
         return
 
     st.subheader(f"{card['ticker']} | {card['verdict']}")
@@ -232,7 +241,7 @@ def render_trade_card(card: Mapping[str, object] | None) -> None:
     st.write(card.get("reason_summary", ""))
     st.caption(card.get("catalyst_summary", ""))
     render_alpaca_depth_proxy_check(card)
-    render_robinhood_venue_check(card)
+    render_venue_check(card)
 
     levels = {
         "Entry": card.get("entry"),
@@ -259,19 +268,21 @@ def render_alpaca_depth_proxy_check(card: Mapping[str, object]) -> None:
     st.dataframe(pd.DataFrame([values]), width="stretch", hide_index=True)
 
 
-def render_robinhood_venue_check(card: Mapping[str, object]) -> None:
-    st.subheader("Robinhood Venue Check")
-    quote_age = card.get("rh_quote_age_seconds")
+def render_venue_check(card: Mapping[str, object]) -> None:
+    st.subheader("Kraken Venue Check")
+    quote_age = card.get("venue_quote_age_seconds")
     age_display = "" if quote_age in (None, "") else f"{float(quote_age):.1f}s"
     values = {
-        "Status": card.get("rh_quote_status", ""),
-        "Tradable": "Yes" if card.get("rh_tradable") else "No",
-        "Bid": card.get("rh_bid"),
-        "Ask": card.get("rh_ask"),
-        "Mid": card.get("rh_mid"),
-        "Spread %": card.get("rh_spread_pct"),
+        "Status": card.get("venue_quote_status", ""),
+        "Tradable": "Yes" if card.get("venue_tradable") else "No",
+        "Symbol": card.get("venue_symbol"),
+        "Bid": card.get("venue_bid"),
+        "Ask": card.get("venue_ask"),
+        "Mid": card.get("venue_mid"),
+        "Spread %": card.get("venue_spread_pct"),
+        "Depth Notional": card.get("venue_depth_notional"),
         "Quote Age": age_display,
-        "Alpaca/RH Deviation %": card.get("alpaca_rh_price_deviation_pct"),
+        "Alpaca/Kraken Deviation %": card.get("alpaca_venue_price_deviation_pct"),
     }
     st.dataframe(pd.DataFrame([values]), width="stretch", hide_index=True)
 
@@ -294,9 +305,12 @@ CRYPTO_MAX_SPREAD_PCT=0.35
 CRYPTO_MIN_ORDERBOOK_NOTIONAL_DEPTH=25000
 CRYPTO_DEPTH_BPS=25
 
-ROBINHOOD_CRYPTO_API_KEY=your_robinhood_crypto_key
-ROBINHOOD_CRYPTO_PRIVATE_KEY=your_base64_private_key
-ROBINHOOD_QUOTE_GATE_ENABLED=true
+VENUE_PROVIDER=kraken
+KRAKEN_BASE_URL=https://api.kraken.com
+KRAKEN_MAX_SPREAD_PCT=0.35
+KRAKEN_MAX_QUOTE_AGE_SECONDS=30
+KRAKEN_MIN_ORDERBOOK_NOTIONAL_DEPTH=25000
+MAX_ALPACA_VENUE_DEVIATION_PCT=0.50
 
 TURSO_DATABASE_URL=your_turso_url
 TURSO_AUTH_TOKEN=your_turso_token""",
@@ -306,18 +320,17 @@ TURSO_AUTH_TOKEN=your_turso_token""",
 
 def render_basic_data_banner(settings: AppSettings) -> None:
     st.warning(
-        "Alpaca provides momentum bars and a depth proxy; Robinhood is the execution-venue quote gate. "
-        "A setup is invalid unless Robinhood confirms tradability and quote quality."
+        "Alpaca provides momentum bars and an early depth proxy; Kraken public data is the execution-venue quote gate. "
+        "A setup is invalid unless Kraken confirms tradability, spread, and depth."
     )
-    if settings.robinhood_quote_gate_enabled and not settings.robinhood_quote_gate_ready:
-        st.info("Robinhood quote gate is enabled but credentials are missing, so scans can run but trade cards remain invalid.")
 
 
 def render_upgrade_trigger_note() -> None:
     with st.expander("Crypto data limitation"):
         st.write(
             "- Alpaca crypto data is venue-specific, not a global consolidated crypto tape.\n"
-            "- Alpaca orderbook depth is a proxy, not Robinhood execution depth.\n"
+            "- Alpaca orderbook depth is an early proxy; Kraken orderbook depth is the final venue-depth gate.\n"
+            "- Kraken public quotes can still differ from the exact fill you receive because fees, slippage, and order type matter.\n"
             "- Mock results are useful for workflow and strategy research, not proof of exchange-wide edge.\n"
             "- Before real-money sizing, compare candidate price, spread, and liquidity against the venue where you will execute."
         )
