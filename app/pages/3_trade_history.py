@@ -49,11 +49,16 @@ if history_rows:
         "realized_pnl",
         "exit_reason",
         "closed_at",
+        "rh_ask",
+        "rh_spread_pct",
+        "alpaca_rh_price_deviation_pct",
+        "alpaca_depth_notional",
+        "alpaca_depth_bps",
         "feed",
         "data_confidence",
         "notes",
     ]
-    st.dataframe(frame[[column for column in visible if column in frame.columns]], use_container_width=True, hide_index=True)
+    st.dataframe(frame[[column for column in visible if column in frame.columns]], width="stretch", hide_index=True)
 
     with st.expander("Settings Snapshots"):
         settings_columns = [
@@ -65,8 +70,17 @@ if history_rows:
             "settings_max_stop_distance_pct",
             "settings_min_risk_reward",
             "settings_max_vwap_extension_pct",
-            "settings_basic_min_iex_adv",
-            "settings_basic_max_universe",
+            "settings_crypto_location",
+            "settings_crypto_universe_mode",
+            "settings_crypto_scan_minutes",
+            "settings_crypto_min_quote_volume",
+            "settings_crypto_max_spread_pct",
+            "settings_crypto_min_orderbook_notional_depth",
+            "settings_crypto_depth_bps",
+            "settings_robinhood_quote_gate",
+            "settings_robinhood_max_spread_pct",
+            "settings_robinhood_max_quote_age",
+            "settings_max_alpaca_rh_deviation_pct",
             "weight_rvol",
             "weight_acceleration",
             "weight_breakout",
@@ -77,7 +91,7 @@ if history_rows:
         ]
         st.dataframe(
             frame[[column for column in settings_columns if column in frame.columns]],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 else:
@@ -86,6 +100,6 @@ else:
 st.subheader("Fills")
 if fills:
     fill_frame = pd.DataFrame(fills)
-    st.dataframe(fill_frame, use_container_width=True, hide_index=True)
+    st.dataframe(fill_frame, width="stretch", hide_index=True)
 else:
     st.caption("No fills yet.")

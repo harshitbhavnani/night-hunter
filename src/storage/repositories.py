@@ -356,18 +356,18 @@ def update_mock_trade(trade_id: int, updates: Mapping[str, object]) -> None:
 def portfolio_state(starting_cash: float = 10_000.0) -> dict[str, float]:
     trades = list_mock_trades()
     fills = list_mock_fills()
-    proceeds = sum(float(fill.get("price", 0)) * int(fill.get("shares", 0)) for fill in fills)
-    entry_cost = sum(float(trade.get("entry", 0)) * int(trade.get("shares", 0)) for trade in trades)
+    proceeds = sum(float(fill.get("price", 0)) * float(fill.get("shares", 0) or 0) for fill in fills)
+    entry_cost = sum(float(trade.get("entry", 0)) * float(trade.get("shares", 0) or 0) for trade in trades)
     cash = starting_cash - entry_cost + proceeds
     open_exposure = sum(
-        float(trade.get("last_price", trade.get("entry", 0))) * int(trade.get("remaining_shares", 0))
+        float(trade.get("last_price", trade.get("entry", 0))) * float(trade.get("remaining_shares", 0) or 0)
         for trade in trades
         if trade.get("status") == "open"
     )
     realized_pnl = sum(float(trade.get("realized_pnl", 0)) for trade in trades)
     unrealized_pnl = sum(
         (float(trade.get("last_price", trade.get("entry", 0))) - float(trade.get("entry", 0)))
-        * int(trade.get("remaining_shares", 0))
+        * float(trade.get("remaining_shares", 0) or 0)
         for trade in trades
         if trade.get("status") == "open"
     )

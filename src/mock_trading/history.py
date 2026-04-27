@@ -21,7 +21,7 @@ def build_trade_history_rows(
         weights = settings.get("score_weights") if isinstance(settings.get("score_weights"), Mapping) else {}
         trade_fills = fills_by_trade.get(trade_id, [])
         fill_summary = ", ".join(
-            f"{fill.get('fill_type')} {fill.get('shares')} @ {float(fill.get('price', 0) or 0):.2f}"
+            f"{fill.get('fill_type')} {float(fill.get('shares', 0) or 0):.8f} @ {float(fill.get('price', 0) or 0):.6f}"
             for fill in trade_fills
         )
 
@@ -50,16 +50,32 @@ def build_trade_history_rows(
                 "notes": trade.get("notes"),
                 "fills": len(trade_fills),
                 "fill_summary": fill_summary,
-                "feed": settings.get("alpaca_feed") or card.get("feed"),
+                "rh_bid": card.get("rh_bid"),
+                "rh_ask": card.get("rh_ask"),
+                "rh_spread_pct": card.get("rh_spread_pct"),
+                "rh_quote_time": card.get("rh_quote_time"),
+                "alpaca_rh_price_deviation_pct": card.get("alpaca_rh_price_deviation_pct"),
+                "alpaca_depth_notional": card.get("alpaca_depth_notional"),
+                "alpaca_depth_bps": card.get("alpaca_depth_bps"),
+                "feed": settings.get("feed") or settings.get("alpaca_feed") or card.get("feed"),
                 "data_confidence": settings.get("data_confidence") or card.get("data_confidence"),
+                "settings_crypto_location": settings.get("crypto_location"),
+                "settings_crypto_universe_mode": settings.get("crypto_universe_mode"),
+                "settings_crypto_scan_minutes": settings.get("crypto_scan_minutes"),
+                "settings_crypto_min_quote_volume": settings.get("crypto_min_quote_volume"),
+                "settings_crypto_max_spread_pct": settings.get("crypto_max_spread_pct"),
+                "settings_crypto_min_orderbook_notional_depth": settings.get("crypto_min_orderbook_notional_depth"),
+                "settings_crypto_depth_bps": settings.get("crypto_depth_bps"),
+                "settings_robinhood_quote_gate": settings.get("robinhood_quote_gate_enabled"),
+                "settings_robinhood_max_spread_pct": settings.get("robinhood_max_spread_pct"),
+                "settings_robinhood_max_quote_age": settings.get("robinhood_max_quote_age_seconds"),
+                "settings_max_alpaca_rh_deviation_pct": settings.get("max_alpaca_rh_deviation_pct"),
                 "settings_min_score": settings.get("min_score"),
                 "settings_alert_score": settings.get("alert_score"),
                 "settings_shortlist_size": settings.get("shortlist_size"),
                 "settings_max_stop_distance_pct": settings.get("max_stop_distance_pct"),
                 "settings_min_risk_reward": settings.get("min_risk_reward"),
                 "settings_max_vwap_extension_pct": settings.get("max_vwap_extension_pct"),
-                "settings_basic_min_iex_adv": settings.get("basic_min_iex_avg_daily_volume"),
-                "settings_basic_max_universe": settings.get("basic_max_universe_symbols"),
                 "weight_rvol": weights.get("rvol") if isinstance(weights, Mapping) else None,
                 "weight_acceleration": weights.get("acceleration") if isinstance(weights, Mapping) else None,
                 "weight_breakout": weights.get("breakout_strength") if isinstance(weights, Mapping) else None,

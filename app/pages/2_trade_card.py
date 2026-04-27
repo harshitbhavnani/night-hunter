@@ -31,6 +31,14 @@ from src.storage.repositories import latest_scan_results, latest_trade_card, por
 from src.utils.timeframes import utc_window
 
 
+def _price_step(price: float) -> float:
+    if price >= 10:
+        return 0.01
+    if price >= 1:
+        return 0.0001
+    return 0.000001
+
+
 page_setup("Trade Card")
 
 st.title("Trade Card")
@@ -39,7 +47,7 @@ render_basic_data_banner(settings)
 render_upgrade_trigger_note()
 render_setup_instructions(settings)
 
-if st.button("Generate Current Trade Card", type="primary", disabled=not settings.live_data_enabled):
+if st.button("Generate Current Crypto Trade Card", type="primary", disabled=not settings.live_data_enabled):
     with st.spinner("Checking hard veto rules and execution levels..."):
         try:
             st.session_state["latest_scan_result"] = run_scan(settings=settings)
@@ -121,10 +129,11 @@ if card and card.get("verdict") == "Valid Trade":
             step=1,
         )
         level_cols = st.columns(4)
-        entry = level_cols[0].number_input("Entry", min_value=0.0, value=float(card.get("entry", 0)), step=0.01)
-        stop = level_cols[1].number_input("Stop", min_value=0.0, value=float(card.get("stop", 0)), step=0.01)
-        target_1 = level_cols[2].number_input("Target 1", min_value=0.0, value=float(card.get("target_1", 0)), step=0.01)
-        target_2 = level_cols[3].number_input("Target 2", min_value=0.0, value=float(card.get("target_2", 0)), step=0.01)
+        price_step = _price_step(float(card.get("entry", 0) or 0))
+        entry = level_cols[0].number_input("Entry", min_value=0.0, value=float(card.get("entry", 0)), step=price_step)
+        stop = level_cols[1].number_input("Stop", min_value=0.0, value=float(card.get("stop", 0)), step=price_step)
+        target_1 = level_cols[2].number_input("Target 1", min_value=0.0, value=float(card.get("target_1", 0)), step=price_step)
+        target_2 = level_cols[3].number_input("Target 2", min_value=0.0, value=float(card.get("target_2", 0)), step=price_step)
         notes = st.text_area("Notes", height=80)
         st.caption(
             f"Recommended allocation: {recommendations['allocation_pct']:.1f}% of available cash. "
@@ -155,7 +164,7 @@ if card and card.get("ticker") and settings.live_data_enabled:
     st.divider()
     st.subheader("Compact Chart")
     provider = AlpacaProvider(settings)
-    start, end = utc_window(90)
+    start, end = utc_window(settings.crypto_scan_minutes)
     bars = provider.get_historical_bars([str(card["ticker"])], "1Min", start, end).get(str(card["ticker"]), [])
     if bars:
         chart_frame = pd.DataFrame(bars)
@@ -168,6 +177,6 @@ if card and card.get("ticker") and settings.live_data_enabled:
                 "Price": [card.get("entry"), card.get("stop"), card.get("target_1"), card.get("target_2")],
             }
         )
-        st.dataframe(levels, use_container_width=True, hide_index=True)
+        st.dataframe(levels, width="stretch", hide_index=True)
     else:
         st.caption(f"No recent bars available as of {datetime.now(timezone.utc).isoformat()}.")

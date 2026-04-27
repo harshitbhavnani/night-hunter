@@ -39,6 +39,10 @@ class BaseMarketDataProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def get_orderbooks(self, symbols: Sequence[str]) -> Dict[str, Mapping[str, object]]:
+        raise NotImplementedError
+
+    @abstractmethod
     def stream_bars(self, symbols: Sequence[str], on_message: ProviderMessageHandler) -> None:
         raise NotImplementedError
 

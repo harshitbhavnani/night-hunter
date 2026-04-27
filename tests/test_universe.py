@@ -9,35 +9,40 @@ from src.storage.repositories import row_value
 from src.universe.build_universe import build_universe
 
 
-class FakeUniverseProvider(BaseMarketDataProvider):
+class FakeCryptoUniverseProvider(BaseMarketDataProvider):
+    def __init__(self) -> None:
+        self.asset_calls = 0
+
     def get_assets(self) -> list[Mapping[str, object]]:
+        self.asset_calls += 1
         return [
-            {"symbol": "GOOD", "name": "Good Common Inc", "asset_class": "us_equity", "status": "active", "tradable": True, "exchange": "NASDAQ"},
-            {"symbol": "LOWV", "name": "Low Volume Inc", "asset_class": "us_equity", "status": "active", "tradable": True, "exchange": "NYSE"},
-            {"symbol": "ZEROV", "name": "Zero Volume Inc", "asset_class": "us_equity", "status": "active", "tradable": True, "exchange": "NYSE"},
-            {"symbol": "FUND", "name": "Example ETF", "asset_class": "us_equity", "status": "active", "tradable": True, "exchange": "NYSE"},
-            {"symbol": "OTC", "name": "OTC Common", "asset_class": "us_equity", "status": "active", "tradable": True, "exchange": "OTC"},
+            {"symbol": "BTC/USD", "asset_class": "crypto", "status": "active", "tradable": True},
+            {"symbol": "ETH/USD", "asset_class": "crypto", "status": "active", "tradable": True},
+            {"symbol": "ZERO/USD", "asset_class": "crypto", "status": "active", "tradable": True},
+            {"symbol": "BTC/EUR", "asset_class": "crypto", "status": "active", "tradable": True},
+            {"symbol": "OLD/USD", "asset_class": "crypto", "status": "inactive", "tradable": True},
+            {"symbol": "LOCK/USD", "asset_class": "crypto", "status": "active", "tradable": False},
+            {"symbol": "TEST", "asset_class": "us_equity", "status": "active", "tradable": True},
         ]
 
     def get_historical_bars(self, symbols: Sequence[str], timeframe: str, start: datetime, end: datetime):
         return {
-            "GOOD": [{"c": 12, "v": 800000} for _ in range(30)],
-            "LOWV": [{"c": 10, "v": 100000} for _ in range(30)],
-            "ZEROV": [{"c": 8, "v": 0} for _ in range(30)],
+            "BTC/USD": [{"c": 60_000, "v": 3} for _ in range(3)],
+            "ETH/USD": [{"c": 3_000, "v": 20} for _ in range(3)],
+            "ZERO/USD": [{"c": 1, "v": 0} for _ in range(3)],
         }
 
     def get_latest_bars(self, symbols: Sequence[str]):
         return {}
 
     def get_market_calendar(self, start: datetime, end: datetime):
-        return [{"date": "2026-04-24", "open": "09:30", "close": "16:00"}]
+        raise AssertionError("Crypto universe should not need calendar.")
 
     def get_snapshots(self, symbols: Sequence[str]):
-        return {
-            "GOOD": {"latestTrade": {"p": 12}},
-            "LOWV": {"latestTrade": {"p": 10}},
-            "ZEROV": {"latestTrade": {"p": 8}},
-        }
+        return {}
+
+    def get_orderbooks(self, symbols: Sequence[str]):
+        return {}
 
     def stream_bars(self, symbols: Sequence[str], on_message: ProviderMessageHandler) -> None:
         raise NotImplementedError
@@ -55,30 +60,31 @@ class FakeUniverseProvider(BaseMarketDataProvider):
         raise NotImplementedError
 
 
-def test_build_universe_uses_alpaca_only_filters_without_market_cap() -> None:
-    rows = build_universe(provider=FakeUniverseProvider())
+def test_build_universe_discovers_active_tradable_usd_crypto_pairs() -> None:
+    rows = build_universe(
+        provider=FakeCryptoUniverseProvider(),
+        settings=AppSettings(crypto_symbols=("DOGE/USD",), crypto_min_quote_volume=50_000),
+    )
 
-    assert [row["symbol"] for row in rows] == ["GOOD", "LOWV"]
+    assert [row["symbol"] for row in rows] == ["BTC/USD", "ETH/USD"]
+    assert all(row["asset_class"] == "crypto" for row in rows)
+    assert rows[0]["avg_daily_volume_source"] == "alpaca_crypto"
     assert "market_cap" not in rows[0]
-    assert rows[0]["avg_daily_volume_source"] == "iex"
 
 
-def test_basic_iex_universe_allows_low_but_real_iex_volume() -> None:
-    rows = build_universe(provider=FakeUniverseProvider(), settings=AppSettings(alpaca_feed="iex"))
+def test_build_universe_uses_safe_fallback_when_discovery_fails() -> None:
+    rows = build_universe(
+        provider=FailingCryptoUniverseProvider(),
+        settings=AppSettings(crypto_symbols=("BTC/USD", "ETH/USD"), crypto_min_quote_volume=50_000),
+        use_cache=False,
+    )
 
-    assert [row["symbol"] for row in rows] == ["GOOD", "LOWV"]
-    assert "ZEROV" not in {row["symbol"] for row in rows}
-
-
-def test_sip_universe_preserves_strict_adv_filter() -> None:
-    rows = build_universe(provider=FakeUniverseProvider(), settings=AppSettings(alpaca_feed="sip"))
-
-    assert [row["symbol"] for row in rows] == ["GOOD"]
+    assert [row["symbol"] for row in rows] == ["BTC/USD", "ETH/USD"]
 
 
-def test_empty_universe_is_not_cached() -> None:
-    provider = EmptyUniverseProvider()
-    settings = AppSettings(alpaca_feed="iex")
+def test_empty_crypto_universe_is_not_cached() -> None:
+    provider = EmptyCryptoUniverseProvider()
+    settings = AppSettings(crypto_symbols=("ZERO/USD",), crypto_min_quote_volume=50_000)
 
     first = build_universe(provider=provider, settings=settings)
     second = build_universe(provider=provider, settings=settings)
@@ -94,15 +100,16 @@ def test_tuple_row_value_reads_selected_payload_column() -> None:
     assert row_value(row, "payload_json", 1) == '{"rows": []}'
 
 
-class EmptyUniverseProvider(FakeUniverseProvider):
-    def __init__(self) -> None:
-        self.asset_calls = 0
-
+class EmptyCryptoUniverseProvider(FakeCryptoUniverseProvider):
     def get_assets(self) -> list[Mapping[str, object]]:
         self.asset_calls += 1
-        return [
-            {"symbol": "ZERO", "name": "Zero Common Inc", "asset_class": "us_equity", "status": "active", "tradable": True, "exchange": "NASDAQ"}
-        ]
+        return [{"symbol": "ZERO/USD", "asset_class": "crypto", "status": "active", "tradable": True}]
 
     def get_historical_bars(self, symbols: Sequence[str], timeframe: str, start: datetime, end: datetime):
-        return {"ZERO": [{"c": 10, "v": 0} for _ in range(30)]}
+        return {"ZERO/USD": [{"c": 10, "v": 0} for _ in range(3)]}
+
+
+class FailingCryptoUniverseProvider(FakeCryptoUniverseProvider):
+    def get_assets(self) -> list[Mapping[str, object]]:
+        self.asset_calls += 1
+        raise RuntimeError("asset discovery unavailable")

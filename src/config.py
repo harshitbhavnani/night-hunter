@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Tuple
 
 from dotenv import load_dotenv
 
@@ -16,10 +16,10 @@ DB_PATH = DATA_DIR / "night_hunter.sqlite3"
 
 @dataclass(frozen=True)
 class ScoreWeights:
-    rvol: float = 0.30
-    acceleration: float = 0.25
-    breakout_strength: float = 0.20
-    catalyst: float = 0.15
+    rvol: float = 0.35
+    acceleration: float = 0.30
+    breakout_strength: float = 0.25
+    catalyst: float = 0.00
     reversal_risk: float = -0.10
 
     def as_dict(self) -> Dict[str, float]:
@@ -40,13 +40,37 @@ class AppSettings:
     alpaca_trading_base_url: str = "https://paper-api.alpaca.markets"
     alpaca_feed: str = "iex"
     provider_mode: str = "live"
-    telegram_bot_token: str = ""
-    telegram_chat_id: str = ""
+    market_mode: str = "crypto"
+    crypto_symbols: Tuple[str, ...] = (
+        "BTC/USD",
+        "ETH/USD",
+        "SOL/USD",
+        "AVAX/USD",
+        "LINK/USD",
+        "UNI/USD",
+        "AAVE/USD",
+        "DOGE/USD",
+        "LTC/USD",
+        "BCH/USD",
+    )
+    crypto_universe_mode: str = "dynamic_safe_fallback"
+    crypto_location: str = "us"
+    crypto_scan_minutes: int = 90
+    crypto_min_quote_volume: float = 50_000.0
+    crypto_max_spread_pct: float = 0.35
+    crypto_min_orderbook_notional_depth: float = 25_000.0
+    crypto_depth_bps: float = 25.0
+    robinhood_crypto_api_key: str = ""
+    robinhood_crypto_private_key: str = ""
+    robinhood_crypto_base_url: str = "https://trading.robinhood.com"
+    robinhood_quote_gate_enabled: bool = True
+    robinhood_max_spread_pct: float = 0.35
+    robinhood_max_quote_age_seconds: int = 10
+    max_alpaca_rh_deviation_pct: float = 0.50
     turso_database_url: str = ""
     turso_auth_token: str = ""
     db_path: Path = DB_PATH
     min_score: float = 7.5
-    alert_score: float = 8.0
     shortlist_size: int = 25
     max_stop_distance_pct: float = 3.0
     min_risk_reward: float = 2.0
@@ -65,6 +89,10 @@ class AppSettings:
             and bool(self.alpaca_api_key)
             and bool(self.alpaca_secret_key)
         )
+
+    @property
+    def robinhood_quote_gate_ready(self) -> bool:
+        return bool(self.robinhood_crypto_api_key and self.robinhood_crypto_private_key)
 
 
 def _float_env(name: str, default: float) -> float:
@@ -87,6 +115,13 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    raw = _setting(name)
+    if raw in (None, ""):
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _setting(name: str, default: str = "") -> str:
     value = os.getenv(name)
     if value not in (None, ""):
@@ -101,15 +136,21 @@ def _setting(name: str, default: str = "") -> str:
     return default
 
 
+def _symbols_env(name: str, default: Tuple[str, ...]) -> Tuple[str, ...]:
+    raw = _setting(name, ",".join(default))
+    symbols = tuple(symbol.strip().upper() for symbol in raw.split(",") if symbol.strip())
+    return symbols or default
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> AppSettings:
     load_dotenv(ROOT_DIR / ".env")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     weights = ScoreWeights(
-        rvol=_float_env("WEIGHT_RVOL", 0.30),
-        acceleration=_float_env("WEIGHT_ACCELERATION", 0.25),
-        breakout_strength=_float_env("WEIGHT_BREAKOUT", 0.20),
-        catalyst=_float_env("WEIGHT_CATALYST", 0.15),
+        rvol=_float_env("WEIGHT_RVOL", 0.35),
+        acceleration=_float_env("WEIGHT_ACCELERATION", 0.30),
+        breakout_strength=_float_env("WEIGHT_BREAKOUT", 0.25),
+        catalyst=_float_env("WEIGHT_CATALYST", 0.0),
         reversal_risk=_float_env("WEIGHT_REVERSAL_RISK", -0.10),
     )
     return AppSettings(
@@ -119,13 +160,29 @@ def get_settings() -> AppSettings:
         alpaca_trading_base_url=_setting("ALPACA_TRADING_BASE_URL", "https://paper-api.alpaca.markets"),
         alpaca_feed=_setting("ALPACA_FEED", "iex"),
         provider_mode=_setting("PROVIDER_MODE", "live"),
-        telegram_bot_token=_setting("TELEGRAM_BOT_TOKEN"),
-        telegram_chat_id=_setting("TELEGRAM_CHAT_ID"),
+        market_mode=_setting("MARKET_MODE", "crypto").lower(),
+        crypto_symbols=_symbols_env(
+            "CRYPTO_SYMBOLS",
+            ("BTC/USD", "ETH/USD", "SOL/USD", "AVAX/USD", "LINK/USD", "UNI/USD", "AAVE/USD", "DOGE/USD", "LTC/USD", "BCH/USD"),
+        ),
+        crypto_universe_mode=_setting("CRYPTO_UNIVERSE_MODE", "dynamic_safe_fallback").lower(),
+        crypto_location=_setting("CRYPTO_LOCATION", "us").lower(),
+        crypto_scan_minutes=_int_env("CRYPTO_SCAN_MINUTES", 90),
+        crypto_min_quote_volume=_float_env("CRYPTO_MIN_QUOTE_VOLUME", 50_000.0),
+        crypto_max_spread_pct=_float_env("CRYPTO_MAX_SPREAD_PCT", 0.35),
+        crypto_min_orderbook_notional_depth=_float_env("CRYPTO_MIN_ORDERBOOK_NOTIONAL_DEPTH", 25_000.0),
+        crypto_depth_bps=_float_env("CRYPTO_DEPTH_BPS", 25.0),
+        robinhood_crypto_api_key=_setting("ROBINHOOD_CRYPTO_API_KEY"),
+        robinhood_crypto_private_key=_setting("ROBINHOOD_CRYPTO_PRIVATE_KEY"),
+        robinhood_crypto_base_url=_setting("ROBINHOOD_CRYPTO_BASE_URL", "https://trading.robinhood.com"),
+        robinhood_quote_gate_enabled=_bool_env("ROBINHOOD_QUOTE_GATE_ENABLED", True),
+        robinhood_max_spread_pct=_float_env("ROBINHOOD_MAX_SPREAD_PCT", 0.35),
+        robinhood_max_quote_age_seconds=_int_env("ROBINHOOD_MAX_QUOTE_AGE_SECONDS", 10),
+        max_alpaca_rh_deviation_pct=_float_env("MAX_ALPACA_RH_DEVIATION_PCT", 0.50),
         turso_database_url=_setting("TURSO_DATABASE_URL"),
         turso_auth_token=_setting("TURSO_AUTH_TOKEN"),
         db_path=Path(_setting("NIGHT_HUNTER_DB_PATH", str(DB_PATH))),
         min_score=_float_env("MIN_SCORE", 7.5),
-        alert_score=_float_env("ALERT_SCORE", 8.0),
         shortlist_size=_int_env("SHORTLIST_SIZE", 25),
         max_stop_distance_pct=_float_env("MAX_STOP_DISTANCE_PCT", 3.0),
         min_risk_reward=_float_env("MIN_RISK_REWARD", 2.0),

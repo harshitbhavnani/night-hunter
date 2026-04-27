@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from typing import Mapping
 
 
@@ -8,7 +7,7 @@ def recommend_entry_controls(card: Mapping[str, object], available_cash: float) 
     entry = float(card.get("entry", 0) or 0)
     allocation_pct = recommended_allocation_pct(card)
     dollar_amount = max(0.0, available_cash * allocation_pct / 100)
-    shares = math.floor(dollar_amount / entry) if entry > 0 else 0
+    shares = round(dollar_amount / entry, 8) if entry > 0 else 0.0
     return {
         "allocation_pct": round(allocation_pct, 2),
         "dollar_amount": round(shares * entry, 2),
@@ -71,4 +70,3 @@ def _feature(card: Mapping[str, object], key: str) -> float:
     if isinstance(features, Mapping):
         return float(features.get(key, 0) or 0)
     return 0.0
-

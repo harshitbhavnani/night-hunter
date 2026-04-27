@@ -22,7 +22,7 @@ page_setup("Performance")
 st.title("Mock Strategy Performance")
 settings = effective_settings()
 render_basic_data_banner(settings)
-st.caption("Mock exits are replayed from Alpaca Basic/IEX 1-minute bars, not consolidated SIP tape.")
+st.caption("Mock exits are replayed from Alpaca crypto 1-minute bars, not a consolidated global crypto tape.")
 render_setup_instructions(settings)
 
 if st.button("Update Mock Results", type="primary", disabled=not settings.live_data_enabled):
@@ -66,7 +66,7 @@ for column, title, payload in (
     (right, "By Ticker", performance["pnl_by_ticker"]),
 ):
     frame = pd.DataFrame([payload]).T.rename(columns={0: "P/L"})
-    column.dataframe(frame, use_container_width=True)
+    column.dataframe(frame, width="stretch")
 
 st.subheader("Trade Log")
 if trades:
@@ -90,12 +90,12 @@ if trades:
         "closed_at",
         "notes",
     ]
-    st.dataframe(trade_frame[[col for col in visible if col in trade_frame.columns]], use_container_width=True)
+    st.dataframe(trade_frame[[col for col in visible if col in trade_frame.columns]], width="stretch")
 else:
     st.caption("No mock trades entered yet.")
 
 st.subheader("Fills")
 if fills:
-    st.dataframe(pd.DataFrame(fills), use_container_width=True)
+    st.dataframe(pd.DataFrame(fills), width="stretch")
 else:
     st.caption("No fills yet.")

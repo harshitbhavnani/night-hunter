@@ -33,14 +33,14 @@ page_setup("Dashboard")
 init_db()
 
 st.title("Night Hunter")
-st.caption("One trade per night momentum dashboard for U.S. equities. Decision support only; execution stays manual.")
+st.caption("24/7 crypto momentum dashboard. Decision support and mock trading only; no real orders are placed.")
 
 settings = effective_settings()
 render_basic_data_banner(settings)
 render_upgrade_trigger_note()
 top = st.columns([1, 1, 2])
-top[0].metric("Provider", "Alpaca Free/IEX" if settings.live_data_enabled else "Not connected")
-top[1].metric("Shortlist", settings.shortlist_size)
+top[0].metric("Provider", "Alpaca Crypto" if settings.live_data_enabled else "Not connected")
+top[1].metric("Universe", settings.crypto_universe_mode)
 
 render_setup_instructions(settings)
 
@@ -51,8 +51,8 @@ if settings.live_data_enabled and not st.session_state.get("mock_results_auto_re
     except Exception as exc:
         st.caption(f"Mock result refresh skipped: {exc}")
 
-if top[2].button("Run Scan", type="primary", use_container_width=True, disabled=not settings.live_data_enabled):
-    with st.spinner("Running batched Stage 1 scan and refreshing the shortlist..."):
+if top[2].button("Run Crypto Scan", type="primary", width="stretch", disabled=not settings.live_data_enabled):
+    with st.spinner("Running a rolling crypto scan and refreshing the shortlist..."):
         try:
             result = run_scan(settings=settings)
         except Exception as exc:
@@ -64,13 +64,21 @@ if top[2].button("Run Scan", type="primary", use_container_width=True, disabled=
             elif result.get("diagnostics", {}).get("universe_size", 0) and not result.get("diagnostics", {}).get(
                 "symbols_with_1min_bars", 0
             ):
-                st.warning("Scan complete, but no 1-minute bars were found for the selected market session.")
+                st.warning("Scan complete, but no 1-minute crypto bars were found for the rolling window.")
             else:
                 st.warning("Scan complete, but no candidates made it through universe/data availability filters.")
 
 result = st.session_state.get("latest_scan_result")
 rows = result["rows"] if result else latest_scan_results(settings.shortlist_size)
 card = result["trade_card"] if result else latest_trade_card()
+if result:
+    diagnostics = result.get("diagnostics", {})
+    st.caption(
+        f"Active scan window ended {diagnostics.get('scan_window_end', 'unknown')} "
+        f"({diagnostics.get('scan_window_label', 'rolling crypto window')})."
+    )
+else:
+    st.caption(f"Crypto scans use the latest rolling {settings.crypto_scan_minutes}-minute window.")
 
 render_trade_card(card)
 
@@ -79,10 +87,10 @@ st.subheader("Current Shortlist")
 if result and not rows:
     diagnostics = result.get("diagnostics", {})
     if diagnostics.get("universe_size", 0) and not diagnostics.get("symbols_with_1min_bars", 0):
-        st.warning("No 1-minute bars found for the selected market session.")
+        st.warning("No 1-minute crypto bars found for the rolling window.")
     else:
         st.warning("No candidates made it through universe/data availability filters.")
-st.dataframe(scan_dataframe(rows), use_container_width=True, hide_index=True)
+st.dataframe(scan_dataframe(rows), width="stretch", hide_index=True)
 render_shortlist_trade_card_launcher(rows, "dashboard")
 render_scan_diagnostics(result)
 

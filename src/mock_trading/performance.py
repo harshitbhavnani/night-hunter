@@ -41,7 +41,7 @@ def compute_performance(
 
 
 def _r_multiple(trade: Mapping[str, object]) -> float:
-    risk = float(trade.get("risk_per_share", 0) or 0) * int(trade.get("shares", 0) or 0)
+    risk = float(trade.get("risk_per_share", 0) or 0) * float(trade.get("shares", 0) or 0)
     return float(trade.get("realized_pnl", 0) or 0) / risk if risk > 0 else 0.0
 
 
@@ -117,4 +117,3 @@ def _parse_dt(value: str) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
-

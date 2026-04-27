@@ -23,7 +23,7 @@ class TradeCard:
     estimated_momentum_life: str
     reason_summary: str
     veto_reasons: List[str]
-    features: Mapping[str, float]
+    features: Mapping[str, object]
     feed: str
     data_confidence: str
     limitations: str
@@ -50,22 +50,37 @@ class TradeCard:
             "data_confidence": self.data_confidence,
             "limitations": self.limitations,
             "settings_snapshot": dict(self.settings_snapshot),
+            "rh_bid": self.features.get("rh_bid"),
+            "rh_ask": self.features.get("rh_ask"),
+            "rh_mid": self.features.get("rh_mid"),
+            "rh_spread_pct": self.features.get("rh_spread_pct"),
+            "rh_quote_time": self.features.get("rh_quote_time"),
+            "rh_quote_age_seconds": self.features.get("rh_quote_age_seconds"),
+            "rh_tradable": self.features.get("rh_tradable"),
+            "rh_quote_status": self.features.get("rh_quote_status"),
+            "alpaca_rh_price_deviation_pct": self.features.get("alpaca_rh_price_deviation_pct"),
+            "robinhood_quote_snapshot": self.features.get("robinhood_quote_snapshot"),
+            "alpaca_depth_notional": self.features.get("alpaca_depth_notional"),
+            "alpaca_depth_bid_notional": self.features.get("alpaca_depth_bid_notional"),
+            "alpaca_depth_ask_notional": self.features.get("alpaca_depth_ask_notional"),
+            "alpaca_depth_bps": self.features.get("alpaca_depth_bps"),
+            "alpaca_depth_proxy_ok": self.features.get("alpaca_depth_proxy_ok"),
         }
 
 
 def build_execution_candidate(row: Mapping[str, object]) -> Dict[str, object]:
-    price = float(row.get("price", 0))
+    price = float(row.get("rh_ask") or row.get("price", 0))
     vwap = float(row.get("vwap", price))
     breakout = max(0.0, float(row.get("breakout_strength", 0)))
-    entry = round(price, 2)
+    entry = _round_price(price)
     vwap_stop = vwap * 0.992 if 0 < vwap < price else price * 0.975
     structural_stop = max(price * 0.975, vwap_stop)
-    stop = round(max(0.01, structural_stop), 2)
-    risk = max(0.01, entry - stop)
+    stop = _round_price(max(_min_tick(price), structural_stop))
+    risk = max(_min_tick(price), entry - stop)
     extension_penalty = max(0.0, float(row.get("distance_from_vwap_pct", 0)) - 3)
     reward_multiple = max(2.0, min(3.2, 2.4 + breakout / 4 - extension_penalty / 10))
-    target_1 = round(entry + risk * 1.5, 2)
-    target_2 = round(entry + risk * reward_multiple, 2)
+    target_1 = _round_price(entry + risk * 1.5)
+    target_2 = _round_price(entry + risk * reward_multiple)
     risk_reward = round((target_2 - entry) / risk, 2) if risk > 0 else 0.0
     stop_distance_pct = (entry - stop) / entry * 100 if entry else 999.0
     exceptional_structure = (
@@ -158,9 +173,42 @@ def _card_from_candidate(candidate: Mapping[str, object], verdict: str, veto_rea
             "reversal_risk": float(candidate.get("reversal_risk", 0)),
             "liquidity_quality": float(candidate.get("liquidity_quality", 0)),
             "distance_from_vwap_pct": float(candidate.get("distance_from_vwap_pct", 0)),
+            "spread_pct": float(candidate.get("spread_pct", 0) or 0),
+            "quote_volume": float(candidate.get("quote_volume", 0) or 0),
+            "alpaca_depth_notional": float(candidate.get("alpaca_depth_notional", 0) or 0),
+            "alpaca_depth_bid_notional": float(candidate.get("alpaca_depth_bid_notional", 0) or 0),
+            "alpaca_depth_ask_notional": float(candidate.get("alpaca_depth_ask_notional", 0) or 0),
+            "alpaca_depth_bps": float(candidate.get("alpaca_depth_bps", 0) or 0),
+            "alpaca_depth_proxy_ok": bool(candidate.get("alpaca_depth_proxy_ok", False)),
+            "rh_bid": float(candidate.get("rh_bid", 0) or 0),
+            "rh_ask": float(candidate.get("rh_ask", 0) or 0),
+            "rh_mid": float(candidate.get("rh_mid", 0) or 0),
+            "rh_spread_pct": float(candidate.get("rh_spread_pct", 0) or 0),
+            "rh_quote_time": str(candidate.get("rh_quote_time", "") or ""),
+            "rh_quote_age_seconds": float(candidate.get("rh_quote_age_seconds", 0) or 0),
+            "rh_tradable": bool(candidate.get("rh_tradable", False)),
+            "rh_quote_status": str(candidate.get("rh_quote_status", "") or ""),
+            "alpaca_rh_price_deviation_pct": float(candidate.get("alpaca_rh_price_deviation_pct", 0) or 0),
+            "robinhood_quote_snapshot": dict(candidate.get("robinhood_quote_snapshot", {}) or {}),
         },
-        feed=str(candidate.get("feed", "iex")),
-        data_confidence=str(candidate.get("data_confidence", "Basic/IEX")),
-        limitations=str(candidate.get("limitations", "Not consolidated SIP tape")),
+        feed=str(candidate.get("feed", "crypto")),
+        data_confidence=str(candidate.get("data_confidence", "Alpaca Crypto")),
+        limitations=str(candidate.get("limitations", "Venue-specific crypto data; not consolidated global tape.")),
         settings_snapshot=dict(settings_snapshot),
     )
+
+
+def _round_price(price: float) -> float:
+    if price >= 10:
+        return round(price, 2)
+    if price >= 1:
+        return round(price, 4)
+    return round(price, 6)
+
+
+def _min_tick(price: float) -> float:
+    if price >= 10:
+        return 0.01
+    if price >= 1:
+        return 0.0001
+    return 0.000001

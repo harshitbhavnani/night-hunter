@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from datetime import datetime, timezone
 from typing import Mapping
 
@@ -24,9 +23,9 @@ def enter_mock_trade(
     stop = float(stop if stop is not None else card.get("stop", 0))
     target_1 = float(target_1 if target_1 is not None else card.get("target_1", 0))
     target_2 = float(target_2 if target_2 is not None else card.get("target_2", 0))
-    shares = math.floor(float(dollar_amount) / entry) if entry > 0 else 0
+    shares = round(float(dollar_amount) / entry, 8) if entry > 0 else 0.0
     if shares <= 0:
-        raise ValueError("Dollar amount is too small to buy at least one mock share.")
+        raise ValueError("Dollar amount is too small to create a mock crypto quantity.")
     if stop >= entry:
         raise ValueError("Stop must be below entry.")
     if target_1 <= entry or target_2 <= entry:

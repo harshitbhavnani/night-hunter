@@ -5,3 +5,4 @@ python-dotenv>=1.0
 websocket-client>=1.8
 libsql>=0.1.11
 pytest>=8.0
+cryptography>=42

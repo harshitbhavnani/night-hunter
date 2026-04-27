@@ -26,6 +26,9 @@ class CalendarProvider(BaseMarketDataProvider):
     def get_snapshots(self, symbols: Sequence[str]):
         return {}
 
+    def get_orderbooks(self, symbols: Sequence[str]):
+        return {}
+
     def stream_bars(self, symbols: Sequence[str], on_message: ProviderMessageHandler) -> None:
         raise NotImplementedError
 

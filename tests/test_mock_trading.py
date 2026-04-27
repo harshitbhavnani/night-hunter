@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Mapping, Sequence
 
 from src.mock_trading.history import build_trade_history_rows
+from src.mock_trading.entry import enter_mock_trade
 from src.mock_trading.performance import compute_performance
 from src.mock_trading.recommendations import recommend_entry_controls
 from src.mock_trading.simulator import update_mock_trade_results
@@ -29,6 +30,9 @@ class FakeBarsProvider(BaseMarketDataProvider):
         return [{"date": "2026-04-24", "open": "09:30", "close": "16:00"}]
 
     def get_snapshots(self, symbols: Sequence[str]):
+        return {}
+
+    def get_orderbooks(self, symbols: Sequence[str]):
         return {}
 
     def stream_bars(self, symbols: Sequence[str], on_message: ProviderMessageHandler) -> None:
@@ -125,9 +129,10 @@ def test_mock_trade_stores_settings_snapshot() -> None:
         datetime.now(timezone.utc),
         settings_snapshot={
             "min_score": 7.8,
-            "alpaca_feed": "iex",
-            "data_confidence": "Basic/IEX",
-            "score_weights": {"rvol": 0.3},
+            "feed": "crypto",
+            "data_confidence": "Alpaca Crypto",
+            "crypto_scan_minutes": 90,
+            "score_weights": {"rvol": 0.35},
         },
     )
 
@@ -135,8 +140,33 @@ def test_mock_trade_stores_settings_snapshot() -> None:
     snapshot = json.loads(str(trade["settings_json"]))
 
     assert snapshot["min_score"] == 7.8
-    assert snapshot["alpaca_feed"] == "iex"
-    assert snapshot["score_weights"]["rvol"] == 0.3
+    assert snapshot["feed"] == "crypto"
+    assert snapshot["crypto_scan_minutes"] == 90
+    assert snapshot["score_weights"]["rvol"] == 0.35
+
+
+def test_crypto_mock_entry_allows_fractional_quantity() -> None:
+    trade_id = enter_mock_trade(
+        {
+            "ticker": "BTC/USD",
+            "phase": "Ignition",
+            "score": 8.8,
+            "entry": 50_000,
+            "stop": 49_000,
+            "target_1": 51_500,
+            "target_2": 52_500,
+        },
+        dollar_amount=500,
+        max_hold_minutes=30,
+        target_1_pct=75,
+        target_2_pct=25,
+    )
+
+    trade = get_mock_trade(trade_id)
+
+    assert trade["ticker"] == "BTC/USD"
+    assert trade["shares"] == 0.01
+    assert trade["entry_notional"] == 500
 
 
 def test_trade_history_uses_mock_trades_and_fills() -> None:
@@ -145,9 +175,10 @@ def test_trade_history_uses_mock_trades_and_fills() -> None:
         entered_at,
         settings_snapshot={
             "min_score": 7.5,
-            "alpaca_feed": "iex",
-            "data_confidence": "Basic/IEX",
-            "score_weights": {"rvol": 0.3, "acceleration": 0.25},
+            "feed": "crypto",
+            "data_confidence": "Alpaca Crypto",
+            "crypto_max_spread_pct": 0.35,
+            "score_weights": {"rvol": 0.35, "acceleration": 0.30},
         },
     )
     add_mock_fill(
@@ -166,9 +197,12 @@ def test_trade_history_uses_mock_trades_and_fills() -> None:
 
     assert rows[0]["ticker"] == "TEST"
     assert rows[0]["fills"] == 1
-    assert rows[0]["fill_summary"] == "target_1 75 @ 10.50"
+    assert rows[0]["fill_summary"] == "target_1 75.00000000 @ 10.500000"
     assert rows[0]["settings_min_score"] == 7.5
-    assert rows[0]["weight_acceleration"] == 0.25
+    assert rows[0]["settings_crypto_max_spread_pct"] == 0.35
+    assert rows[0]["rh_ask"] == 10.01
+    assert rows[0]["rh_spread_pct"] == 0.2
+    assert rows[0]["weight_acceleration"] == 0.30
 
 
 def _create_trade(entered_at: datetime, settings_snapshot: Mapping[str, object] | None = None) -> int:
@@ -179,7 +213,14 @@ def _create_trade(entered_at: datetime, settings_snapshot: Mapping[str, object] 
             "status": "open",
             "phase": "Ignition",
             "score": 8.5,
-            "card": {"ticker": "TEST"},
+            "card": {
+                "ticker": "TEST",
+                "rh_bid": 9.99,
+                "rh_ask": 10.01,
+                "rh_spread_pct": 0.2,
+                "rh_quote_time": entered_at.isoformat(),
+                "alpaca_rh_price_deviation_pct": 0.1,
+            },
             "dollar_amount": 1000,
             "entry": 10.0,
             "stop": 9.5,

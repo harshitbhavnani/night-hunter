@@ -24,7 +24,6 @@ with st.form("settings"):
     st.subheader("Thresholds")
     st.caption("These thresholds decide whether a scanned candidate is a valid trade. They do not control initial universe discovery.")
     min_score = st.slider("Minimum valid score", 0.0, 10.0, float(settings.min_score), 0.1)
-    alert_score = st.slider("Alert score", 0.0, 10.0, float(settings.alert_score), 0.1)
     shortlist_size = st.slider("Shortlist size", 10, 30, int(settings.shortlist_size), 1)
     max_stop_distance_pct = st.slider("Max stop distance %", 1.0, 8.0, float(settings.max_stop_distance_pct), 0.1)
     min_risk_reward = st.slider("Minimum risk/reward", 1.0, 4.0, float(settings.min_risk_reward), 0.1)
@@ -32,6 +31,7 @@ with st.form("settings"):
     mock_starting_cash = st.number_input("Mock starting cash", min_value=1000.0, value=float(settings.mock_starting_cash), step=1000.0)
 
     st.subheader("Weights")
+    st.caption("Crypto mode defaults catalyst weight to 0 because setups are structure-first.")
     cols = st.columns(5)
     weight_rvol = cols[0].number_input("RVOL", value=float(settings.score_weights.rvol), step=0.01)
     weight_acceleration = cols[1].number_input("Acceleration", value=float(settings.score_weights.acceleration), step=0.01)
@@ -39,38 +39,114 @@ with st.form("settings"):
     weight_catalyst = cols[3].number_input("Catalyst", value=float(settings.score_weights.catalyst), step=0.01)
     weight_reversal_risk = cols[4].number_input("Reversal risk", value=float(settings.score_weights.reversal_risk), step=0.01)
 
-    st.subheader("Basic/IEX Universe")
-    st.caption("IEX volume is not consolidated market volume, so Night Hunter uses a Basic-specific discovery floor.")
-    universe_cols = st.columns(2)
-    basic_min_iex_avg_daily_volume = universe_cols[0].number_input(
-        "Min IEX ADV",
-        min_value=0.0,
-        value=float(settings.basic_min_iex_avg_daily_volume),
-        step=1000.0,
+    st.subheader("Crypto Universe")
+    st.caption(
+        "Dynamic mode discovers active tradable Alpaca USD crypto pairs. The list below is only the safe fallback."
     )
-    basic_max_universe_symbols = universe_cols[1].number_input(
-        "Max scan universe symbols",
-        min_value=50,
-        max_value=3000,
-        value=int(settings.basic_max_universe_symbols),
-        step=50,
+    crypto_universe_mode = st.selectbox(
+        "Universe mode",
+        ["dynamic_safe_fallback", "fixed"],
+        index=0 if settings.crypto_universe_mode == "dynamic_safe_fallback" else 1,
+        help="dynamic_safe_fallback discovers all Alpaca USD crypto pairs and uses the safe list only if discovery fails.",
+    )
+    crypto_symbols = st.text_area(
+        "Safe fallback pairs",
+        value=",".join(settings.crypto_symbols),
+        height=80,
+        help="Comma-separated fallback symbols such as BTC/USD,ETH/USD,SOL/USD. Fixed mode scans only these pairs.",
+    )
+    universe_cols = st.columns(4)
+    crypto_location = universe_cols[0].selectbox(
+        "Location",
+        ["us", "global"],
+        index=0 if settings.crypto_location == "us" else 1,
+    )
+    crypto_scan_minutes = universe_cols[1].number_input(
+        "Rolling scan minutes",
+        min_value=15,
+        max_value=360,
+        value=int(settings.crypto_scan_minutes),
+        step=15,
+    )
+    crypto_min_quote_volume = universe_cols[2].number_input(
+        "Min quote volume",
+        min_value=0.0,
+        value=float(settings.crypto_min_quote_volume),
+        step=10_000.0,
+    )
+    crypto_max_spread_pct = universe_cols[3].number_input(
+        "Max spread %",
+        min_value=0.01,
+        max_value=5.0,
+        value=float(settings.crypto_max_spread_pct),
+        step=0.05,
+    )
+    depth_cols = st.columns(2)
+    crypto_min_orderbook_notional_depth = depth_cols[0].number_input(
+        "Min Alpaca depth proxy $",
+        min_value=0.0,
+        value=float(settings.crypto_min_orderbook_notional_depth),
+        step=5_000.0,
+        help="Minimum bid/ask notional depth inside the configured BPS window. This is an Alpaca proxy, not Robinhood depth.",
+    )
+    crypto_depth_bps = depth_cols[1].number_input(
+        "Depth BPS window",
+        min_value=1.0,
+        max_value=200.0,
+        value=float(settings.crypto_depth_bps),
+        step=1.0,
+    )
+
+    st.subheader("Robinhood Quote Gate")
+    st.caption("Robinhood is the execution venue check. Orders are still disabled; this only validates live quotes.")
+    robinhood_quote_gate_enabled = st.toggle("Require Robinhood venue confirmation", value=bool(settings.robinhood_quote_gate_enabled))
+    rh_cols = st.columns(3)
+    robinhood_max_spread_pct = rh_cols[0].number_input(
+        "Robinhood max spread %",
+        min_value=0.01,
+        max_value=5.0,
+        value=float(settings.robinhood_max_spread_pct),
+        step=0.05,
+    )
+    robinhood_max_quote_age_seconds = rh_cols[1].number_input(
+        "Max quote age seconds",
+        min_value=1,
+        max_value=120,
+        value=int(settings.robinhood_max_quote_age_seconds),
+        step=1,
+    )
+    max_alpaca_rh_deviation_pct = rh_cols[2].number_input(
+        "Max Alpaca/RH deviation %",
+        min_value=0.01,
+        max_value=5.0,
+        value=float(settings.max_alpaca_rh_deviation_pct),
+        step=0.05,
     )
 
     st.subheader("Provider")
-    st.caption("Night Hunter v1 is real-data only and uses Alpaca Free/IEX batched REST plus shortlist-only streams.")
+    st.caption("Night Hunter uses Alpaca for historical bars and Robinhood for venue quote validation.")
     submitted = st.form_submit_button("Apply Settings", type="primary")
 
 if submitted:
     payload = {
         "min_score": min_score,
-        "alert_score": alert_score,
         "shortlist_size": shortlist_size,
         "max_stop_distance_pct": max_stop_distance_pct,
         "min_risk_reward": min_risk_reward,
         "max_vwap_extension_pct": max_vwap_extension_pct,
         "mock_starting_cash": mock_starting_cash,
-        "basic_min_iex_avg_daily_volume": basic_min_iex_avg_daily_volume,
-        "basic_max_universe_symbols": basic_max_universe_symbols,
+        "crypto_universe_mode": crypto_universe_mode,
+        "crypto_symbols": crypto_symbols,
+        "crypto_location": crypto_location,
+        "crypto_scan_minutes": crypto_scan_minutes,
+        "crypto_min_quote_volume": crypto_min_quote_volume,
+        "crypto_max_spread_pct": crypto_max_spread_pct,
+        "crypto_min_orderbook_notional_depth": crypto_min_orderbook_notional_depth,
+        "crypto_depth_bps": crypto_depth_bps,
+        "robinhood_quote_gate_enabled": robinhood_quote_gate_enabled,
+        "robinhood_max_spread_pct": robinhood_max_spread_pct,
+        "robinhood_max_quote_age_seconds": robinhood_max_quote_age_seconds,
+        "max_alpaca_rh_deviation_pct": max_alpaca_rh_deviation_pct,
         "weight_rvol": weight_rvol,
         "weight_acceleration": weight_acceleration,
         "weight_breakout": weight_breakout,
@@ -85,12 +161,23 @@ st.divider()
 st.subheader("Environment")
 st.write(
     {
-        "Alpaca feed": settings.alpaca_feed,
+        "Market mode": "crypto",
+        "Universe mode": settings.crypto_universe_mode,
+        "Crypto location": settings.crypto_location,
+        "Safe fallback pairs": ", ".join(settings.crypto_symbols),
         "Credentials loaded": bool(settings.alpaca_api_key and settings.alpaca_secret_key),
+        "Robinhood credentials loaded": settings.robinhood_quote_gate_ready,
+        "Robinhood quote gate": settings.robinhood_quote_gate_enabled,
         "Turso configured": bool(settings.turso_database_url and settings.turso_auth_token),
         "Database": str(settings.db_path),
-        "Data confidence": "Basic/IEX" if settings.alpaca_feed.lower() == "iex" else "SIP/Plus",
-        "Min IEX ADV": settings.basic_min_iex_avg_daily_volume,
-        "Max Basic universe": settings.basic_max_universe_symbols,
+        "Data confidence": "Alpaca Crypto",
+        "Rolling scan minutes": settings.crypto_scan_minutes,
+        "Min quote volume": settings.crypto_min_quote_volume,
+        "Max spread %": settings.crypto_max_spread_pct,
+        "Min Alpaca depth proxy $": settings.crypto_min_orderbook_notional_depth,
+        "Depth BPS window": settings.crypto_depth_bps,
+        "Robinhood max spread %": settings.robinhood_max_spread_pct,
+        "Robinhood max quote age seconds": settings.robinhood_max_quote_age_seconds,
+        "Max Alpaca/RH deviation %": settings.max_alpaca_rh_deviation_pct,
     }
 )

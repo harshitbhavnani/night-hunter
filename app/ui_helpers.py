@@ -19,13 +19,18 @@ from src.config import AppSettings, ScoreWeights, get_settings
 TABLE_COLUMNS = {
     "ticker": "Ticker",
     "price": "Price",
-    "avg_daily_volume": "IEX ADV",
+    "quote_volume": "Quote Volume",
     "day_change_pct": "% Day",
     "return_15m": "% 15m",
     "rvol": "RVOL",
     "acceleration": "Acceleration",
     "phase": "Phase",
-    "has_catalyst": "Catalyst",
+    "spread_pct": "Alpaca Spread %",
+    "alpaca_depth_notional": "Depth Proxy",
+    "alpaca_depth_proxy_ok": "Depth OK",
+    "rh_spread_pct": "RH Spread %",
+    "rh_tradable": "RH Tradable",
+    "rh_quote_status": "RH Status",
     "score": "Score",
     "verdict": "Verdict",
     "data_confidence": "Data",
@@ -51,16 +56,34 @@ def effective_settings() -> AppSettings:
     return replace(
         base,
         min_score=float(payload.get("min_score", base.min_score)),
-        alert_score=float(payload.get("alert_score", base.alert_score)),
         shortlist_size=int(payload.get("shortlist_size", base.shortlist_size)),
         max_stop_distance_pct=float(payload.get("max_stop_distance_pct", base.max_stop_distance_pct)),
         min_risk_reward=float(payload.get("min_risk_reward", base.min_risk_reward)),
         max_vwap_extension_pct=float(payload.get("max_vwap_extension_pct", base.max_vwap_extension_pct)),
         mock_starting_cash=float(payload.get("mock_starting_cash", base.mock_starting_cash)),
-        basic_min_iex_avg_daily_volume=float(
-            payload.get("basic_min_iex_avg_daily_volume", base.basic_min_iex_avg_daily_volume)
+        crypto_symbols=tuple(
+            symbol.strip().upper()
+            for symbol in str(payload.get("crypto_symbols", ",".join(base.crypto_symbols))).split(",")
+            if symbol.strip()
+        )
+        or base.crypto_symbols,
+        crypto_universe_mode=str(payload.get("crypto_universe_mode", base.crypto_universe_mode)).lower(),
+        crypto_location=str(payload.get("crypto_location", base.crypto_location)).lower(),
+        crypto_scan_minutes=int(payload.get("crypto_scan_minutes", base.crypto_scan_minutes)),
+        crypto_min_quote_volume=float(payload.get("crypto_min_quote_volume", base.crypto_min_quote_volume)),
+        crypto_max_spread_pct=float(payload.get("crypto_max_spread_pct", base.crypto_max_spread_pct)),
+        crypto_min_orderbook_notional_depth=float(
+            payload.get("crypto_min_orderbook_notional_depth", base.crypto_min_orderbook_notional_depth)
         ),
-        basic_max_universe_symbols=int(payload.get("basic_max_universe_symbols", base.basic_max_universe_symbols)),
+        crypto_depth_bps=float(payload.get("crypto_depth_bps", base.crypto_depth_bps)),
+        robinhood_quote_gate_enabled=bool(payload.get("robinhood_quote_gate_enabled", base.robinhood_quote_gate_enabled)),
+        robinhood_max_spread_pct=float(payload.get("robinhood_max_spread_pct", base.robinhood_max_spread_pct)),
+        robinhood_max_quote_age_seconds=int(
+            payload.get("robinhood_max_quote_age_seconds", base.robinhood_max_quote_age_seconds)
+        ),
+        max_alpaca_rh_deviation_pct=float(
+            payload.get("max_alpaca_rh_deviation_pct", base.max_alpaca_rh_deviation_pct)
+        ),
         score_weights=weights,
     )
 
@@ -73,10 +96,22 @@ def scan_dataframe(rows: list[Mapping[str, object]]) -> pd.DataFrame:
         if column not in frame.columns:
             frame[column] = ""
     frame = frame[list(TABLE_COLUMNS.keys())].rename(columns=TABLE_COLUMNS)
-    numeric = ["Price", "IEX ADV", "% Day", "% 15m", "RVOL", "Acceleration", "Score"]
+    numeric = [
+        "Price",
+        "Quote Volume",
+        "% Day",
+        "% 15m",
+        "RVOL",
+        "Acceleration",
+        "Alpaca Spread %",
+        "Depth Proxy",
+        "RH Spread %",
+        "Score",
+    ]
     for column in numeric:
         frame[column] = pd.to_numeric(frame[column], errors="coerce").round(2)
-    frame["Catalyst"] = frame["Catalyst"].map(lambda value: "Yes" if value else "No")
+    frame["Depth OK"] = frame["Depth OK"].map(lambda value: "Yes" if value else "No")
+    frame["RH Tradable"] = frame["RH Tradable"].map(lambda value: "Yes" if value else "No")
     return frame
 
 
@@ -99,7 +134,7 @@ def render_shortlist_trade_card_launcher(rows: list[Mapping[str, object]], key_p
 
     left, right = st.columns([3, 1])
     selected = left.selectbox("Open shortlist ticker", symbols, format_func=label, key=f"{key_prefix}_trade_symbol")
-    if right.button("Open Trade Card", key=f"{key_prefix}_open_trade_card", use_container_width=True):
+    if right.button("Open Trade Card", key=f"{key_prefix}_open_trade_card", width="stretch"):
         st.session_state["selected_trade_symbol"] = selected
         _switch_to_trade_card()
 
@@ -120,11 +155,15 @@ def render_scan_diagnostics(result: Mapping[str, object] | None) -> None:
         st.caption(f"Universe cache: {cache_text}")
         columns = st.columns(4)
         metrics = [
-            ("Assets", diagnostics.get("assets_loaded")),
-            ("Common Stocks", diagnostics.get("common_stock_count")),
-            ("Price Eligible", diagnostics.get("price_eligible_count")),
-            ("Volume Eligible", diagnostics.get("volume_eligible_count")),
-            ("Universe", diagnostics.get("universe_size")),
+            ("Fallback Pairs", diagnostics.get("configured_pair_count")),
+            ("Alpaca Assets", diagnostics.get("total_alpaca_crypto_assets", diagnostics.get("assets_loaded"))),
+            ("USD Pairs", diagnostics.get("usd_pair_count")),
+            ("Pairs With Daily Bars", diagnostics.get("pairs_with_daily_bars")),
+            ("Quote Vol Eligible", diagnostics.get("quote_volume_eligible_count", diagnostics.get("volume_eligible_count"))),
+            ("Alpaca Spread OK", diagnostics.get("alpaca_spread_eligible_count")),
+            ("Depth OK", diagnostics.get("alpaca_depth_eligible_count")),
+            ("RH Tradable", diagnostics.get("robinhood_tradable_count")),
+            ("Trading Universe", diagnostics.get("final_trading_universe_size", diagnostics.get("universe_size"))),
             ("1m Bars", diagnostics.get("symbols_with_1min_bars")),
             ("Feature Rows", diagnostics.get("feature_rows")),
             ("Shortlist", diagnostics.get("shortlist_size")),
@@ -137,11 +176,24 @@ def render_scan_diagnostics(result: Mapping[str, object] | None) -> None:
             {
                 "feed": diagnostics.get("feed"),
                 "scan_mode": diagnostics.get("scan_mode"),
+                "universe_mode": diagnostics.get("crypto_universe_mode"),
+                "safe_fallback_used": diagnostics.get("safe_fallback_used"),
+                "universe_source": diagnostics.get("universe_source"),
                 "scan_window_start": diagnostics.get("scan_window_start"),
                 "scan_window_end": diagnostics.get("scan_window_end"),
-                "volume_floor": diagnostics.get("volume_floor"),
-                "max_universe_symbols": diagnostics.get("max_universe_symbols"),
+                "min_quote_volume": diagnostics.get("min_quote_volume"),
+                "max_spread_pct": diagnostics.get("max_spread_pct"),
+                "min_orderbook_notional_depth": diagnostics.get("min_orderbook_notional_depth"),
+                "depth_bps": diagnostics.get("depth_bps"),
+                "alpaca_orderbook_count": diagnostics.get("alpaca_orderbook_count"),
                 "news_symbols_fetched": diagnostics.get("news_symbols_fetched"),
+                "robinhood_quote_gate_enabled": diagnostics.get("robinhood_quote_gate_enabled"),
+                "robinhood_quote_status": diagnostics.get("robinhood_quote_status"),
+                "robinhood_quote_count": diagnostics.get("robinhood_quote_count"),
+                "robinhood_product_count": diagnostics.get("robinhood_product_count"),
+                "robinhood_spread_eligible_count": diagnostics.get("robinhood_spread_eligible_count"),
+                "robinhood_gate_applied": diagnostics.get("robinhood_gate_applied"),
+                "asset_discovery_error": diagnostics.get("asset_discovery_error"),
                 "cache_created_at": diagnostics.get("cache_created_at"),
             }
         )
@@ -155,11 +207,18 @@ def _switch_to_trade_card() -> None:
 
 
 def render_trade_card(card: Mapping[str, object] | None) -> None:
-    if not card or card.get("verdict") != "Valid Trade":
+    if not card:
         st.subheader("No Trade Tonight")
-        reasons = (card or {}).get("veto_reasons") or ["No candidate cleared the hard veto logic."]
+        st.caption("No candidate cleared the hard veto logic.")
+        return
+
+    if card.get("verdict") != "Valid Trade":
+        st.subheader("No Trade Tonight")
+        reasons = card.get("veto_reasons") or ["No candidate cleared the hard veto logic."]
         st.caption("Best candidate failed one or more hard rules.")
         st.write("\n".join(f"- {reason}" for reason in reasons))
+        render_alpaca_depth_proxy_check(card)
+        render_robinhood_venue_check(card)
         return
 
     st.subheader(f"{card['ticker']} | {card['verdict']}")
@@ -172,6 +231,8 @@ def render_trade_card(card: Mapping[str, object] | None) -> None:
 
     st.write(card.get("reason_summary", ""))
     st.caption(card.get("catalyst_summary", ""))
+    render_alpaca_depth_proxy_check(card)
+    render_robinhood_venue_check(card)
 
     levels = {
         "Entry": card.get("entry"),
@@ -180,10 +241,39 @@ def render_trade_card(card: Mapping[str, object] | None) -> None:
         "Target 2": card.get("target_2"),
         "Momentum Life": card.get("estimated_momentum_life"),
     }
-    st.dataframe(pd.DataFrame([levels]), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame([levels]), width="stretch", hide_index=True)
 
     breakdown = pd.DataFrame([card.get("score_breakdown", {})]).T.rename(columns={0: "Subscore"})
     st.bar_chart(breakdown)
+
+
+def render_alpaca_depth_proxy_check(card: Mapping[str, object]) -> None:
+    st.subheader("Alpaca Depth Proxy Check")
+    values = {
+        "Depth OK": "Yes" if card.get("alpaca_depth_proxy_ok") else "No",
+        "Depth Notional": card.get("alpaca_depth_notional"),
+        "Bid Depth": card.get("alpaca_depth_bid_notional"),
+        "Ask Depth": card.get("alpaca_depth_ask_notional"),
+        "BPS Window": card.get("alpaca_depth_bps"),
+    }
+    st.dataframe(pd.DataFrame([values]), width="stretch", hide_index=True)
+
+
+def render_robinhood_venue_check(card: Mapping[str, object]) -> None:
+    st.subheader("Robinhood Venue Check")
+    quote_age = card.get("rh_quote_age_seconds")
+    age_display = "" if quote_age in (None, "") else f"{float(quote_age):.1f}s"
+    values = {
+        "Status": card.get("rh_quote_status", ""),
+        "Tradable": "Yes" if card.get("rh_tradable") else "No",
+        "Bid": card.get("rh_bid"),
+        "Ask": card.get("rh_ask"),
+        "Mid": card.get("rh_mid"),
+        "Spread %": card.get("rh_spread_pct"),
+        "Quote Age": age_display,
+        "Alpaca/RH Deviation %": card.get("alpaca_rh_price_deviation_pct"),
+    }
+    st.dataframe(pd.DataFrame([values]), width="stretch", hide_index=True)
 
 
 def render_setup_instructions(settings: AppSettings) -> None:
@@ -194,7 +284,19 @@ def render_setup_instructions(settings: AppSettings) -> None:
         """PROVIDER_MODE=live
 ALPACA_API_KEY=your_key
 ALPACA_SECRET_KEY=your_secret
-ALPACA_FEED=iex
+MARKET_MODE=crypto
+CRYPTO_LOCATION=us
+CRYPTO_UNIVERSE_MODE=dynamic_safe_fallback
+CRYPTO_SYMBOLS=BTC/USD,ETH/USD,SOL/USD,AVAX/USD,LINK/USD,UNI/USD,AAVE/USD,DOGE/USD,LTC/USD,BCH/USD
+CRYPTO_SCAN_MINUTES=90
+CRYPTO_MIN_QUOTE_VOLUME=50000
+CRYPTO_MAX_SPREAD_PCT=0.35
+CRYPTO_MIN_ORDERBOOK_NOTIONAL_DEPTH=25000
+CRYPTO_DEPTH_BPS=25
+
+ROBINHOOD_CRYPTO_API_KEY=your_robinhood_crypto_key
+ROBINHOOD_CRYPTO_PRIVATE_KEY=your_base64_private_key
+ROBINHOOD_QUOTE_GATE_ENABLED=true
 
 TURSO_DATABASE_URL=your_turso_url
 TURSO_AUTH_TOKEN=your_turso_token""",
@@ -203,27 +305,29 @@ TURSO_AUTH_TOKEN=your_turso_token""",
 
 
 def render_basic_data_banner(settings: AppSettings) -> None:
-    if settings.alpaca_feed.lower() != "iex":
-        return
     st.warning(
-        "Basic/IEX data only. Signals may miss consolidated market volume, quotes, and breakouts."
+        "Alpaca provides momentum bars and a depth proxy; Robinhood is the execution-venue quote gate. "
+        "A setup is invalid unless Robinhood confirms tradability and quote quality."
     )
+    if settings.robinhood_quote_gate_enabled and not settings.robinhood_quote_gate_ready:
+        st.info("Robinhood quote gate is enabled but credentials are missing, so scans can run but trade cards remain invalid.")
 
 
 def render_upgrade_trigger_note() -> None:
-    with st.expander("When to upgrade data"):
+    with st.expander("Crypto data limitation"):
         st.write(
-            "- Upgrade to Alpaca Algo Trader Plus before relying on mock results for real-money scaling.\n"
-            "- Upgrade if Night Hunter frequently disagrees with Robinhood Legend charts.\n"
-            "- Upgrade if the strategy depends on fast breakouts, tight spreads, or full-market RVOL."
+            "- Alpaca crypto data is venue-specific, not a global consolidated crypto tape.\n"
+            "- Alpaca orderbook depth is a proxy, not Robinhood execution depth.\n"
+            "- Mock results are useful for workflow and strategy research, not proof of exchange-wide edge.\n"
+            "- Before real-money sizing, compare candidate price, spread, and liquidity against the venue where you will execute."
         )
 
 
 def render_manual_confirmation_checklist() -> None:
     st.subheader("Manual Confirmation")
     st.write(
-        "- Confirm price and volume in Robinhood Legend.\n"
+        "- Confirm price and volume on your execution venue.\n"
         "- Confirm spread and liquidity are acceptable.\n"
-        "- Confirm the catalyst is real and current.\n"
+        "- Confirm the structure is still clean and not a stale spike.\n"
         "- Confirm stop and targets still make sense before any real-money execution."
     )
