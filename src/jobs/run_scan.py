@@ -186,12 +186,12 @@ def _apply_crypto_liquidity_gates(
     spread_rows = [
         row for row in quote_rows if float(row.get("spread_pct", 999) or 999) <= settings.crypto_max_spread_pct
     ]
-    depth_rows = [
+    alpaca_depth_rows = [
         row
         for row in spread_rows
         if float(row.get("alpaca_depth_notional", 0) or 0) >= settings.crypto_min_orderbook_notional_depth
     ]
-    venue_tradable_rows = [row for row in depth_rows if bool(row.get("venue_tradable", False))]
+    venue_tradable_rows = [row for row in spread_rows if bool(row.get("venue_tradable", False))]
     venue_spread_rows = [
         row
         for row in venue_tradable_rows
@@ -207,7 +207,7 @@ def _apply_crypto_liquidity_gates(
         {
             "quote_volume_eligible_count": len(quote_rows),
             "alpaca_spread_eligible_count": len(spread_rows),
-            "alpaca_depth_eligible_count": len(depth_rows),
+            "alpaca_depth_eligible_count": len(alpaca_depth_rows),
             "venue_tradable_count": len(venue_tradable_rows),
             "venue_spread_eligible_count": len(venue_spread_rows),
             "venue_depth_eligible_count": len(venue_depth_rows),
@@ -215,7 +215,7 @@ def _apply_crypto_liquidity_gates(
             "final_trading_universe_size": len(venue_depth_rows) if venue_gate_applied else 0,
         }
     )
-    return venue_depth_rows if venue_depth_rows else depth_rows
+    return venue_depth_rows if venue_depth_rows else spread_rows
 
 
 def _venue_data(

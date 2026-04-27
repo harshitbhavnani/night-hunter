@@ -66,11 +66,17 @@ def test_veto_engine_rejects_wide_crypto_spread() -> None:
     assert any("Crypto spread" in reason for reason in result.reasons)
 
 
-def test_veto_engine_rejects_low_depth_crypto_pair() -> None:
-    result = apply_veto_logic(_crypto_candidate(alpaca_depth_notional=1000))
+def test_veto_engine_rejects_low_kraken_depth_crypto_pair() -> None:
+    result = apply_veto_logic(_crypto_candidate(venue_depth_notional=1000))
 
     assert result.valid is False
-    assert any("depth proxy" in reason for reason in result.reasons)
+    assert any("Kraken depth" in reason for reason in result.reasons)
+
+
+def test_veto_engine_does_not_reject_low_alpaca_depth_proxy() -> None:
+    result = apply_veto_logic(_crypto_candidate(alpaca_depth_notional=1000))
+
+    assert result.valid is True
 
 
 def test_veto_engine_rejects_stale_kraken_quote() -> None:

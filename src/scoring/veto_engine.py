@@ -29,7 +29,6 @@ def apply_veto_logic(
     liquidity_quality = float(candidate.get("liquidity_quality", 0))
     distance_vwap = float(candidate.get("distance_from_vwap_pct", 0))
     spread_pct = float(candidate.get("spread_pct", 0) or 0)
-    alpaca_depth_notional = _float_default(candidate.get("alpaca_depth_notional"), 0.0)
     venue_status = str(candidate.get("venue_quote_status", "") or "")
     venue_bid = _float_default(candidate.get("venue_bid"), 0.0)
     venue_ask = _float_default(candidate.get("venue_ask"), 0.0)
@@ -53,8 +52,6 @@ def apply_veto_logic(
         reasons.append("Spread/liquidity quality is poor.")
     if is_crypto and spread_pct > settings.crypto_max_spread_pct:
         reasons.append(f"Crypto spread above {settings.crypto_max_spread_pct:.2f}%.")
-    if is_crypto and alpaca_depth_notional < settings.crypto_min_orderbook_notional_depth:
-        reasons.append(f"Alpaca depth proxy below ${settings.crypto_min_orderbook_notional_depth:,.0f}.")
     if is_crypto:
         if venue_status != "ok":
             reasons.append("Kraken venue confirmation missing.")

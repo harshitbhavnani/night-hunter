@@ -235,7 +235,7 @@ def test_empty_crypto_scan_returns_diagnostics_without_candidates() -> None:
     assert result["diagnostics"]["news_symbols_fetched"] == 0
 
 
-def test_low_depth_pairs_are_excluded_before_ranking() -> None:
+def test_low_alpaca_depth_proxy_does_not_hide_kraken_confirmed_rows() -> None:
     provider = FakeCryptoProvider(count=3)
 
     def thin_orderbooks(symbols: Sequence[str]):
@@ -260,10 +260,11 @@ def test_low_depth_pairs_are_excluded_before_ranking() -> None:
 
     result = run_scan(provider=provider, venue_provider=FakeVenueProvider(), settings=settings, persist=False)
 
-    assert result["rows"] == []
     assert result["diagnostics"]["feature_rows"] == 3
     assert result["diagnostics"]["alpaca_depth_eligible_count"] == 0
-    assert result["diagnostics"]["final_trading_universe_size"] == 0
+    assert result["diagnostics"]["venue_depth_eligible_count"] == 3
+    assert result["diagnostics"]["final_trading_universe_size"] == 3
+    assert len(result["rows"]) == 3
 
 
 def test_watch_shortlist_caps_streamed_symbols_at_30() -> None:
