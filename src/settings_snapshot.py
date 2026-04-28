@@ -30,5 +30,9 @@ def build_settings_snapshot(settings: AppSettings) -> dict[str, object]:
         "min_risk_reward": settings.min_risk_reward,
         "max_vwap_extension_pct": settings.max_vwap_extension_pct,
         "mock_starting_cash": settings.mock_starting_cash,
+        "mock_fee_bps": settings.mock_fee_bps,
+        "mock_slippage_bps": settings.mock_slippage_bps,
+        "calibration_min_trades": settings.calibration_min_trades,
+        "calibration_holdout_pct": settings.calibration_holdout_pct,
         "score_weights": settings.score_weights.as_dict(),
     }

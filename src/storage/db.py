@@ -146,16 +146,12 @@ class DatabaseConnection:
         path = path or settings.db_path
         self.uses_turso = bool(settings.turso_database_url and settings.turso_auth_token)
         if self.uses_turso:
-            import libsql
+            import libsql_client
 
-            local_replica = Path(path).with_suffix(".libsql")
-            local_replica.parent.mkdir(parents=True, exist_ok=True)
-            self._connection = libsql.connect(
-                str(local_replica),
-                sync_url=settings.turso_database_url,
+            self._connection = libsql_client.create_client_sync(
+                settings.turso_database_url,
                 auth_token=settings.turso_auth_token,
             )
-            self._connection.sync()
         else:
             db_path = Path(path)
             db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -173,9 +169,14 @@ class DatabaseConnection:
         self.close()
 
     def execute(self, sql: str, params: Sequence[object] = ()) -> object:
-        return self._connection.execute(sql, params)
+        result = self._connection.execute(sql, params)
+        return LibsqlResult(result) if self.uses_turso else result
 
     def executemany(self, sql: str, rows: Iterable[Sequence[object]]) -> None:
+        if self.uses_turso:
+            for row in rows:
+                self._connection.execute(sql, row)
+            return
         if hasattr(self._connection, "executemany"):
             self._connection.executemany(sql, list(rows))
             return
@@ -192,12 +193,12 @@ class DatabaseConnection:
                 self._connection.execute(statement)
 
     def commit(self) -> None:
-        self._connection.commit()
         if self.uses_turso:
-            self._connection.sync()
+            return
+        self._connection.commit()
 
     def rollback(self) -> None:
-        if hasattr(self._connection, "rollback"):
+        if not self.uses_turso and hasattr(self._connection, "rollback"):
             self._connection.rollback()
 
     def close(self) -> None:
@@ -206,6 +207,20 @@ class DatabaseConnection:
 
 def get_connection(path: Path | str | None = None) -> DatabaseConnection:
     return DatabaseConnection(path)
+
+
+class LibsqlResult:
+    def __init__(self, result: object) -> None:
+        self._result = result
+        self.lastrowid = getattr(result, "last_insert_rowid", None)
+
+    def fetchone(self) -> object | None:
+        rows = self.fetchall()
+        return rows[0] if rows else None
+
+    def fetchall(self) -> list[object]:
+        rows = getattr(self._result, "rows", [])
+        return list(rows)
 
 
 def init_db(path: Path | str | None = None) -> None:

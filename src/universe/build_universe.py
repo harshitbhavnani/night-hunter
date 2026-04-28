@@ -84,12 +84,16 @@ def build_universe(
 
     rows: List[Dict[str, object]] = []
     pairs_with_daily_bars = 0
+    safe_fallback_symbols = {_normalize_usd_symbol(symbol) for symbol in settings.crypto_symbols}
+    safe_fallback_symbols.discard("")
+    safe_fallback_pairs_included = 0
     for asset in assets:
         symbol = str(asset.get("symbol", "")).upper()
         symbol_bars = daily_bars.get(symbol, [])
         price = _daily_close(symbol_bars)
         avg_base_volume = _average_daily_volume(symbol_bars)
         quote_volume = price * avg_base_volume
+        is_safe_fallback = symbol in safe_fallback_symbols
         if price > 0 and avg_base_volume > 0:
             pairs_with_daily_bars += 1
         row = {
@@ -101,8 +105,11 @@ def build_universe(
             "quote_volume": quote_volume,
             "dollar_volume": quote_volume,
             "asset_class": "crypto",
+            "safe_fallback_pair": is_safe_fallback,
         }
-        if price > 0 and quote_volume >= settings.crypto_min_quote_volume:
+        if price > 0 and (quote_volume >= settings.crypto_min_quote_volume or (is_safe_fallback and quote_volume > 0)):
+            if is_safe_fallback and quote_volume < settings.crypto_min_quote_volume:
+                safe_fallback_pairs_included += 1
             rows.append(row)
     rows.sort(key=lambda row: float(row.get("dollar_volume", 0)), reverse=True)
     volume_eligible_count = len(rows)
@@ -121,8 +128,10 @@ def build_universe(
         "configured_pair_count": len(settings.crypto_symbols),
         "usd_pair_count": len(assets),
         "pairs_with_daily_bars": pairs_with_daily_bars,
+        "daily_quote_volume_eligible_count": volume_eligible_count,
         "quote_volume_eligible_count": volume_eligible_count,
         "volume_eligible_count": volume_eligible_count,
+        "safe_fallback_pairs_included": safe_fallback_pairs_included,
         "universe_size": len(rows),
     }
     if discovery_error:
@@ -137,7 +146,7 @@ def _cache_key(settings: AppSettings) -> str:
     today = datetime.now(timezone.utc).date().isoformat()
     symbols = "-".join(symbol.replace("/", "") for symbol in settings.crypto_symbols)
     return (
-        f"universe:crypto:{settings.crypto_location}:"
+        f"universe:v3:crypto:{settings.crypto_location}:"
         f"{settings.crypto_universe_mode}:{int(settings.crypto_min_quote_volume)}:"
         f"{settings.shortlist_size}:{symbols}:{today}"
     )
@@ -176,7 +185,7 @@ def _safe_fallback_assets(settings: AppSettings) -> list[dict[str, object]]:
             "exchange": f"alpaca_crypto_{settings.crypto_location}",
         }
         for symbol in settings.crypto_symbols
-        if _normalize_usd_symbol(symbol)
+        if _normalize_usd_symbol(symbol) and not _is_stablecoin_symbol(_normalize_usd_symbol(symbol))
     ]
 
 
@@ -185,6 +194,8 @@ def _normalized_asset(asset: Mapping[str, object]) -> dict[str, object] | None:
         return None
     symbol = _normalize_usd_symbol(asset.get("symbol"))
     if not symbol:
+        return None
+    if _is_stablecoin_symbol(symbol):
         return None
     if not _is_active(asset) or not _is_tradable(asset):
         return None
@@ -223,6 +234,11 @@ def _normalize_usd_symbol(value: object) -> str:
     if raw.endswith("USD") and len(raw) > 3:
         return f"{raw[:-3]}/USD"
     return ""
+
+
+def _is_stablecoin_symbol(symbol: str) -> bool:
+    base = symbol.split("/", 1)[0].upper()
+    return base in {"USDC", "USDT", "DAI", "USDG", "PYUSD", "USDP", "TUSD", "GUSD", "FDUSD", "USDE"}
 
 
 def _cache_age_minutes(created_at: object) -> float | None:

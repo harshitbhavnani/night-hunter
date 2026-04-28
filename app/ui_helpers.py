@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.errors import StreamlitAPIException
 
+from src.analysis.calibration import scan_score_diagnostics
 from src.config import AppSettings, ScoreWeights, get_settings
 
 
@@ -62,6 +63,10 @@ def effective_settings() -> AppSettings:
         min_risk_reward=float(payload.get("min_risk_reward", base.min_risk_reward)),
         max_vwap_extension_pct=float(payload.get("max_vwap_extension_pct", base.max_vwap_extension_pct)),
         mock_starting_cash=float(payload.get("mock_starting_cash", base.mock_starting_cash)),
+        mock_fee_bps=float(payload.get("mock_fee_bps", base.mock_fee_bps)),
+        mock_slippage_bps=float(payload.get("mock_slippage_bps", base.mock_slippage_bps)),
+        calibration_min_trades=int(payload.get("calibration_min_trades", base.calibration_min_trades)),
+        calibration_holdout_pct=float(payload.get("calibration_holdout_pct", base.calibration_holdout_pct)),
         crypto_symbols=tuple(
             symbol.strip().upper()
             for symbol in str(payload.get("crypto_symbols", ",".join(base.crypto_symbols))).split(",")
@@ -149,6 +154,7 @@ def render_scan_diagnostics(result: Mapping[str, object] | None) -> None:
     diagnostics = (result or {}).get("diagnostics")
     if not isinstance(diagnostics, Mapping):
         return
+    score_report = scan_score_diagnostics((result or {}).get("rows", []))
 
     with st.expander("Scan Diagnostics"):
         cache_source = diagnostics.get("cache_source", "unknown")
@@ -165,7 +171,8 @@ def render_scan_diagnostics(result: Mapping[str, object] | None) -> None:
             ("Alpaca Assets", diagnostics.get("total_alpaca_crypto_assets", diagnostics.get("assets_loaded"))),
             ("USD Pairs", diagnostics.get("usd_pair_count")),
             ("Pairs With Daily Bars", diagnostics.get("pairs_with_daily_bars")),
-            ("Quote Vol Eligible", diagnostics.get("quote_volume_eligible_count", diagnostics.get("volume_eligible_count"))),
+            ("Daily Vol Eligible", diagnostics.get("daily_quote_volume_eligible_count", diagnostics.get("volume_eligible_count"))),
+            ("Rolling Vol OK", diagnostics.get("rolling_quote_volume_eligible_count")),
             ("Alpaca Spread OK", diagnostics.get("alpaca_spread_eligible_count")),
             ("Depth OK", diagnostics.get("alpaca_depth_eligible_count")),
             ("Kraken Tradable", diagnostics.get("venue_tradable_count")),
@@ -188,7 +195,17 @@ def render_scan_diagnostics(result: Mapping[str, object] | None) -> None:
                 "universe_source": diagnostics.get("universe_source"),
                 "scan_window_start": diagnostics.get("scan_window_start"),
                 "scan_window_end": diagnostics.get("scan_window_end"),
-                "min_quote_volume": diagnostics.get("min_quote_volume"),
+                "daily_min_quote_volume": diagnostics.get("min_quote_volume"),
+                "rolling_min_quote_volume": diagnostics.get("rolling_min_quote_volume"),
+                "rolling_quote_volume_eligible_count": diagnostics.get("rolling_quote_volume_eligible_count"),
+                "alpaca_rolling_quote_volume_eligible_count": diagnostics.get("alpaca_rolling_quote_volume_eligible_count"),
+                "venue_implied_quote_volume_eligible_count": diagnostics.get("venue_implied_quote_volume_eligible_count"),
+                "safe_fallback_pairs_included": diagnostics.get("safe_fallback_pairs_included"),
+                "market_regime": diagnostics.get("market_regime"),
+                "btc_return_15m": diagnostics.get("btc_return_15m"),
+                "btc_return_30m": diagnostics.get("btc_return_30m"),
+                "eth_return_15m": diagnostics.get("eth_return_15m"),
+                "eth_return_30m": diagnostics.get("eth_return_30m"),
                 "max_spread_pct": diagnostics.get("max_spread_pct"),
                 "min_orderbook_notional_depth": diagnostics.get("min_orderbook_notional_depth"),
                 "depth_bps": diagnostics.get("depth_bps"),
@@ -204,6 +221,18 @@ def render_scan_diagnostics(result: Mapping[str, object] | None) -> None:
                 "venue_gate_applied": diagnostics.get("venue_gate_applied"),
                 "asset_discovery_error": diagnostics.get("asset_discovery_error"),
                 "cache_created_at": diagnostics.get("cache_created_at"),
+            }
+        )
+        st.caption("Score diagnostics help calibrate thresholds after enough mock results exist.")
+        st.write(
+            {
+                "candidate_count": score_report["candidate_count"],
+                "valid_count": score_report["valid_count"],
+                "score_min": score_report["score_min"],
+                "score_median": score_report["score_median"],
+                "score_max": score_report["score_max"],
+                "score_buckets": score_report["score_buckets"],
+                "top_veto_reasons": score_report["top_veto_reasons"],
             }
         )
 
@@ -311,6 +340,12 @@ KRAKEN_MAX_SPREAD_PCT=0.35
 KRAKEN_MAX_QUOTE_AGE_SECONDS=30
 KRAKEN_MIN_ORDERBOOK_NOTIONAL_DEPTH=25000
 MAX_ALPACA_VENUE_DEVIATION_PCT=0.50
+
+MOCK_STARTING_CASH=10000
+MOCK_FEE_BPS=40
+MOCK_SLIPPAGE_BPS=5
+CALIBRATION_MIN_TRADES=30
+CALIBRATION_HOLDOUT_PCT=30
 
 TURSO_DATABASE_URL=your_turso_url
 TURSO_AUTH_TOKEN=your_turso_token""",

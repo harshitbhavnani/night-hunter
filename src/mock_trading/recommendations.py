@@ -22,6 +22,7 @@ def recommended_allocation_pct(card: Mapping[str, object]) -> float:
         return 0.0
     score = float(card.get("score", 0) or 0)
     reversal_risk = _feature(card, "reversal_risk")
+    market_regime = _market_regime(card)
     allocation = 5.0
     if score >= 9.0:
         allocation += 7.5
@@ -33,6 +34,10 @@ def recommended_allocation_pct(card: Mapping[str, object]) -> float:
         allocation += 2.5
     if reversal_risk >= 4.5:
         allocation -= 2.5
+    if market_regime == "Caution":
+        allocation -= 2.5
+    if market_regime == "Risk-Off" and str(card.get("ticker") or "") not in {"BTC/USD", "ETH/USD"}:
+        allocation = min(allocation, 3.0)
     return max(3.0, min(15.0, allocation))
 
 
@@ -42,11 +47,14 @@ def recommended_max_hold_minutes(card: Mapping[str, object]) -> int:
     liquidity = _feature(card, "liquidity_quality")
     reversal_risk = _feature(card, "reversal_risk")
     vwap_extension = _feature(card, "distance_from_vwap_pct")
+    market_regime = _market_regime(card)
     hold = 30 if phase == "Ignition" else 18
     if score >= 8.75 and liquidity >= 7.5 and reversal_risk <= 3:
         hold += 10
     if vwap_extension > 5 or reversal_risk >= 4.5:
         hold -= 8
+    if market_regime in {"Caution", "Risk-Off"}:
+        hold -= 5
     return int(max(10, min(45, hold)))
 
 
@@ -56,6 +64,9 @@ def recommended_target_split(card: Mapping[str, object]) -> dict[str, int]:
     liquidity = _feature(card, "liquidity_quality")
     reversal_risk = _feature(card, "reversal_risk")
     vwap_extension = _feature(card, "distance_from_vwap_pct")
+    market_regime = _market_regime(card)
+    if market_regime in {"Caution", "Risk-Off"}:
+        return {"target_1_pct": 85, "target_2_pct": 15}
     if score >= 8.7 and phase == "Ignition" and reversal_risk <= 3 and liquidity >= 7:
         return {"target_1_pct": 60, "target_2_pct": 40}
     if reversal_risk >= 4.5 or vwap_extension >= 5 or liquidity < 7:
@@ -70,3 +81,13 @@ def _feature(card: Mapping[str, object], key: str) -> float:
     if isinstance(features, Mapping):
         return float(features.get(key, 0) or 0)
     return 0.0
+
+
+def _market_regime(card: Mapping[str, object]) -> str:
+    value = card.get("market_regime")
+    if value:
+        return str(value)
+    features = card.get("features") or {}
+    if isinstance(features, Mapping):
+        return str(features.get("market_regime") or "")
+    return ""

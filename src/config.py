@@ -76,6 +76,10 @@ class AppSettings:
     max_vwap_extension_pct: float = 8.0
     scan_refresh_seconds: int = 180
     mock_starting_cash: float = 10_000.0
+    mock_fee_bps: float = 40.0
+    mock_slippage_bps: float = 5.0
+    calibration_min_trades: int = 30
+    calibration_holdout_pct: float = 30.0
     basic_news_candidate_count: int = 60
     basic_min_iex_avg_daily_volume: float = 10_000.0
     basic_max_universe_symbols: int = 800
@@ -187,6 +191,10 @@ def get_settings() -> AppSettings:
         max_vwap_extension_pct=_float_env("MAX_VWAP_EXTENSION_PCT", 8.0),
         scan_refresh_seconds=_int_env("SCAN_REFRESH_SECONDS", 180),
         mock_starting_cash=_float_env("MOCK_STARTING_CASH", 10_000.0),
+        mock_fee_bps=_float_env("MOCK_FEE_BPS", 40.0),
+        mock_slippage_bps=_float_env("MOCK_SLIPPAGE_BPS", 5.0),
+        calibration_min_trades=_int_env("CALIBRATION_MIN_TRADES", 30),
+        calibration_holdout_pct=_float_env("CALIBRATION_HOLDOUT_PCT", 30.0),
         basic_news_candidate_count=_int_env("BASIC_NEWS_CANDIDATE_COUNT", 60),
         basic_min_iex_avg_daily_volume=_float_env("BASIC_MIN_IEX_AVG_DAILY_VOLUME", 10_000.0),
         basic_max_universe_symbols=_int_env("BASIC_MAX_UNIVERSE_SYMBOLS", 800),

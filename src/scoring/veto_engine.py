@@ -37,6 +37,8 @@ def apply_veto_logic(
     venue_tradable = bool(candidate.get("venue_tradable", False))
     venue_depth_notional = _float_default(candidate.get("venue_depth_notional"), 0.0)
     alpaca_venue_deviation = _float_default(candidate.get("alpaca_venue_price_deviation_pct"), 999.0)
+    market_regime = str(candidate.get("market_regime", "") or "")
+    ticker = str(candidate.get("ticker") or candidate.get("symbol") or "")
 
     if score < settings.min_score:
         reasons.append(f"Score below {settings.min_score:.1f}.")
@@ -53,6 +55,8 @@ def apply_veto_logic(
     if is_crypto and spread_pct > settings.crypto_max_spread_pct:
         reasons.append(f"Crypto spread above {settings.crypto_max_spread_pct:.2f}%.")
     if is_crypto:
+        if market_regime == "Risk-Off" and ticker not in {"BTC/USD", "ETH/USD"}:
+            reasons.append("Crypto regime is risk-off for altcoin longs.")
         if venue_status != "ok":
             reasons.append("Kraken venue confirmation missing.")
         else:

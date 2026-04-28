@@ -87,11 +87,13 @@ class FakeVenueProvider:
         bid: float = 104.95,
         ask: float = 105.05,
         depth_notional: float = 75_000,
+        daily_base_volume: float = 10_000,
     ) -> None:
         self.tradable = tradable
         self.bid = bid
         self.ask = ask
         self.depth_notional = depth_notional
+        self.daily_base_volume = daily_base_volume
 
     def get_products(self, symbols: Sequence[str]):
         return {
@@ -112,6 +114,7 @@ class FakeVenueProvider:
                 "mid": mid,
                 "spread_pct": spread_pct,
                 "quote_time": now,
+                "raw": {"v": [str(self.daily_base_volume / 4), str(self.daily_base_volume)]},
             }
             for symbol in symbols
         }
@@ -267,6 +270,31 @@ def test_low_alpaca_depth_proxy_does_not_hide_kraken_confirmed_rows() -> None:
     assert len(result["rows"]) == 3
 
 
+def test_venue_volume_backstop_keeps_shortlist_when_alpaca_window_volume_is_thin() -> None:
+    provider = FakeCryptoProvider(count=3, minute_bars=_minute_bars(volume=0))
+    settings = AppSettings(
+        alpaca_api_key="key",
+        alpaca_secret_key="secret",
+        provider_mode="live",
+        crypto_symbols=tuple(provider.symbols),
+        shortlist_size=3,
+        min_score=1.0,
+        crypto_min_quote_volume=50_000,
+    )
+
+    result = run_scan(
+        provider=provider,
+        venue_provider=FakeVenueProvider(bid=104.95, ask=105.05, daily_base_volume=10_000),
+        settings=settings,
+        persist=False,
+    )
+
+    assert result["diagnostics"]["alpaca_rolling_quote_volume_eligible_count"] == 0
+    assert result["diagnostics"]["venue_implied_quote_volume_eligible_count"] == 3
+    assert result["diagnostics"]["rolling_quote_volume_eligible_count"] == 3
+    assert len(result["rows"]) == 3
+
+
 def test_watch_shortlist_caps_streamed_symbols_at_30() -> None:
     provider = FakeCryptoProvider(count=8)
 
@@ -288,7 +316,7 @@ class EmptyVenueProvider(FakeVenueProvider):
         return {}
 
 
-def _minute_bars() -> list[dict[str, object]]:
+def _minute_bars(volume: float | None = None) -> list[dict[str, object]]:
     bars = []
     price = 100.0
     now = datetime.now(timezone.utc) - timedelta(minutes=90)
@@ -301,7 +329,7 @@ def _minute_bars() -> list[dict[str, object]]:
                 "h": close * 1.001,
                 "l": price * 0.999,
                 "c": close,
-                "v": 80 + minute,
+                "v": volume if volume is not None else 80 + minute,
             }
         )
         price = close

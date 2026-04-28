@@ -50,6 +50,11 @@ MAX_ALPACA_VENUE_DEVIATION_PCT = "0.50"
 TURSO_DATABASE_URL = "..."
 TURSO_AUTH_TOKEN = "..."
 
+MOCK_STARTING_CASH = "10000"
+MOCK_FEE_BPS = "40"
+MOCK_SLIPPAGE_BPS = "5"
+CALIBRATION_MIN_TRADES = "30"
+CALIBRATION_HOLDOUT_PCT = "30"
 ```
 
 Turso/libSQL is optional for local development. If Turso credentials are blank, Night Hunter uses `data/night_hunter.sqlite3`. For Streamlit Cloud, configure Turso so mock-trade history survives app restarts and redeploys.
@@ -59,7 +64,7 @@ Turso/libSQL is optional for local development. If Turso credentials are blank, 
 The active universe defaults to dynamic Alpaca crypto discovery. Night Hunter fetches active/tradable Alpaca crypto assets, keeps USD pairs, and uses `CRYPTO_SYMBOLS` only as the safe fallback list or when `CRYPTO_UNIVERSE_MODE=fixed`. The scanner:
 
 - refreshes pair/daily quote-volume cache locally,
-- filters by recent quote volume so tiny illiquid coins cannot rank just because they moved sharply,
+- filters by effective quote volume, using Alpaca rolling volume when present and Kraken 24h venue volume as the liquidity backstop,
 - uses Alpaca quote spread and an Alpaca orderbook depth proxy as pre-ranking liquidity gates,
 - uses Kraken public bid/ask as the final execution-venue spread and tradability gate,
 - uses Kraken public orderbook depth as the final venue-depth gate,
@@ -83,6 +88,8 @@ Momentum Score =
 
 Hard vetoes reject weak scores, exhaustion/dump phases, wide stops, poor risk/reward, poor spread/liquidity, excessive VWAP extension, crypto spreads above the configured max, missing Kraken quotes, non-tradable Kraken assets, stale Kraken quotes, wide Kraken spreads, low Kraken depth, or excessive Alpaca/Kraken price deviation.
 
+The scanner also labels the rolling BTC/ETH regime as Constructive, Caution, or Risk-Off. Risk-Off blocks new altcoin long cards, while Caution makes mock sizing and target splits more conservative.
+
 ## Mock Trading
 
 Valid trade cards include **Enter Mock Trade**. The app recommends editable controls:
@@ -92,6 +99,12 @@ Valid trade cards include **Enter Mock Trade**. The app recommends editable cont
 - Target 1 / Target 2 split.
 
 Crypto quantities are fractional. The mock long entry defaults to Kraken ask when the venue gate passes. After Target 1 fills, the remaining stop moves to breakeven by default. “Automatic selling” means simulated exits only.
+
+Replay includes configurable estimated fee and slippage assumptions. Defaults are `MOCK_FEE_BPS=40` per side and `MOCK_SLIPPAGE_BPS=5` on exits, so the dashboard is deliberately less flattering than a clean candle replay.
+
+## Calibration
+
+The Performance page includes a Calibration Advisor once closed mock trades accumulate. It uses a simple walk-forward split, reports expectancy in R, summarizes performance by phase, score bucket, ticker/regime, and tests candidate minimum-score thresholds against a holdout set. It is intentionally advisory only: it never auto-applies settings because that would overfit a small live sample.
 
 ## Pages
 

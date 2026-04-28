@@ -48,12 +48,14 @@ def run_scan(
     symbols = [str(row["symbol"]).upper() for row in universe]
     fundamentals = {str(row["symbol"]).upper(): row for row in universe}
     start, end = utc_window(settings.crypto_scan_minutes)
+    rolling_min_quote_volume = _rolling_min_quote_volume(settings)
     diagnostics.update(
         {
             "scan_mode": "crypto_rolling",
             "scan_window_label": f"Rolling crypto window: last {settings.crypto_scan_minutes} minutes",
             "scan_window_start": start.isoformat(),
             "scan_window_end": end.isoformat(),
+            "rolling_min_quote_volume": rolling_min_quote_volume,
         }
     )
 
@@ -63,6 +65,16 @@ def run_scan(
     venue_products, venue_quotes, venue_orderbooks = _venue_data(symbols, venue_provider, settings, diagnostics)
     diagnostics["symbols_with_1min_bars"] = sum(1 for bars in bars_by_symbol.values() if bars)
     diagnostics["alpaca_orderbook_count"] = len(orderbooks)
+    market_regime = _market_regime(bars_by_symbol)
+    diagnostics.update(
+        {
+            "market_regime": market_regime["market_regime"],
+            "btc_return_15m": market_regime["btc_return_15m"],
+            "btc_return_30m": market_regime["btc_return_30m"],
+            "eth_return_15m": market_regime["eth_return_15m"],
+            "eth_return_30m": market_regime["eth_return_30m"],
+        }
+    )
 
     coarse_rows = [
         _features_for_symbol(
@@ -77,6 +89,7 @@ def run_scan(
             fundamentals.get(symbol, {}),
             settings,
             settings_snapshot,
+            market_regime,
         )
         for symbol in symbols
     ]
@@ -117,18 +130,24 @@ def _features_for_symbol(
     fundamentals: Mapping[str, object],
     settings: AppSettings,
     settings_snapshot: Mapping[str, object],
+    market_regime: Mapping[str, object],
 ) -> dict[str, object]:
     if len(bars) < 10:
         return {}
     price = float((snapshot.get("latestTrade") or {}).get("p") or bars[-1].get("c") or 0)
     avg_daily_volume = float(fundamentals.get("avg_daily_volume") or 0)
     dollar_volume = float(fundamentals.get("dollar_volume") or 0)
-    quote_volume_window = sum(float(bar.get("v", 0) or 0) * float(bar.get("c", 0) or 0) for bar in bars)
+    alpaca_quote_volume_window = sum(float(bar.get("v", 0) or 0) * float(bar.get("c", 0) or 0) for bar in bars)
     vwap = compute_vwap(bars)
-    liquidity = crypto_liquidity_quality(snapshot, quote_volume_window, settings.crypto_min_quote_volume)
+    rolling_min_quote_volume = _rolling_min_quote_volume(settings)
     spread_pct = spread_pct_from_snapshot(snapshot)
     depth_metrics = orderbook_depth_metrics(orderbook, settings.crypto_depth_bps)
     depth_notional = float(depth_metrics.get("alpaca_depth_notional", 0) or 0)
+    venue_features = _venue_features(symbol, price, venue_quote, venue_product, venue_orderbook, settings)
+    venue_quote_volume_24h = _float_value(venue_features.get("venue_quote_volume_24h"))
+    venue_implied_quote_volume = venue_quote_volume_24h * min(1.0, max(1, settings.crypto_scan_minutes) / 1440)
+    effective_quote_volume = max(alpaca_quote_volume_window, venue_implied_quote_volume)
+    liquidity = crypto_liquidity_quality(snapshot, effective_quote_volume, rolling_min_quote_volume)
     features = {
         "ticker": symbol,
         "asset_class": "crypto",
@@ -140,12 +159,15 @@ def _features_for_symbol(
         "avg_daily_volume": avg_daily_volume,
         "avg_daily_volume_source": fundamentals.get("avg_daily_volume_source", "alpaca_crypto"),
         "dollar_volume": dollar_volume,
-        "quote_volume": quote_volume_window,
+        "quote_volume": effective_quote_volume,
+        "alpaca_quote_volume": alpaca_quote_volume_window,
+        "venue_implied_quote_volume": venue_implied_quote_volume,
+        "rolling_min_quote_volume": rolling_min_quote_volume,
         "day_change_pct": day_percent_change(snapshot, bars),
         "return_5m": rolling_return(bars, 5),
         "return_15m": rolling_return(bars, 15),
         "return_30m": rolling_return(bars, 30),
-        "rvol": compute_rvol(bars, avg_daily_volume),
+        "rvol": compute_rvol(bars, avg_daily_volume, session_minutes=1440),
         "acceleration": compute_acceleration(bars),
         "vwap": vwap,
         "distance_from_vwap_pct": distance_from_vwap_pct(price, vwap),
@@ -161,8 +183,14 @@ def _features_for_symbol(
         "liquidity_quality": liquidity,
         **depth_metrics,
         "alpaca_depth_proxy_ok": depth_notional >= settings.crypto_min_orderbook_notional_depth,
+        "market_regime": market_regime.get("market_regime", "Unknown"),
+        "btc_return_15m": market_regime.get("btc_return_15m", 0.0),
+        "btc_return_30m": market_regime.get("btc_return_30m", 0.0),
+        "eth_return_15m": market_regime.get("eth_return_15m", 0.0),
+        "eth_return_30m": market_regime.get("eth_return_30m", 0.0),
+        "regime_risk": market_regime.get("regime_risk", 0.0),
     }
-    features.update(_venue_features(symbol, price, venue_quote, venue_product, venue_orderbook, settings))
+    features.update(venue_features)
     features["reversal_risk"] = reversal_risk_score(bars, price, vwap, liquidity)
     score = compute_momentum_score(features, settings.score_weights)
     features["score"] = score.total
@@ -180,8 +208,13 @@ def _apply_crypto_liquidity_gates(
     settings: AppSettings,
     diagnostics: dict[str, object],
 ) -> list[dict[str, object]]:
-    quote_rows = [
-        row for row in rows if float(row.get("quote_volume", 0) or 0) >= settings.crypto_min_quote_volume
+    rolling_min_quote_volume = _rolling_min_quote_volume(settings)
+    quote_rows = [row for row in rows if float(row.get("quote_volume", 0) or 0) >= rolling_min_quote_volume]
+    alpaca_quote_rows = [
+        row for row in rows if float(row.get("alpaca_quote_volume", 0) or 0) >= rolling_min_quote_volume
+    ]
+    venue_implied_quote_rows = [
+        row for row in rows if float(row.get("venue_implied_quote_volume", 0) or 0) >= rolling_min_quote_volume
     ]
     spread_rows = [
         row for row in quote_rows if float(row.get("spread_pct", 999) or 999) <= settings.crypto_max_spread_pct
@@ -206,6 +239,10 @@ def _apply_crypto_liquidity_gates(
     diagnostics.update(
         {
             "quote_volume_eligible_count": len(quote_rows),
+            "rolling_quote_volume_eligible_count": len(quote_rows),
+            "alpaca_rolling_quote_volume_eligible_count": len(alpaca_quote_rows),
+            "venue_implied_quote_volume_eligible_count": len(venue_implied_quote_rows),
+            "rolling_min_quote_volume": rolling_min_quote_volume,
             "alpaca_spread_eligible_count": len(spread_rows),
             "alpaca_depth_eligible_count": len(alpaca_depth_rows),
             "venue_tradable_count": len(venue_tradable_rows),
@@ -216,6 +253,36 @@ def _apply_crypto_liquidity_gates(
         }
     )
     return venue_depth_rows if venue_depth_rows else spread_rows
+
+
+def _market_regime(bars_by_symbol: Mapping[str, list[Mapping[str, object]]]) -> dict[str, object]:
+    btc_bars = bars_by_symbol.get("BTC/USD", [])
+    eth_bars = bars_by_symbol.get("ETH/USD", [])
+    btc_15m = rolling_return(btc_bars, 15) if btc_bars else 0.0
+    btc_30m = rolling_return(btc_bars, 30) if btc_bars else 0.0
+    eth_15m = rolling_return(eth_bars, 15) if eth_bars else 0.0
+    eth_30m = rolling_return(eth_bars, 30) if eth_bars else 0.0
+    regime = "Constructive"
+    risk = 0.0
+    if btc_15m <= -1.25 or btc_30m <= -2.5 or (btc_15m < -0.75 and eth_15m < -1.0):
+        regime = "Risk-Off"
+        risk = 8.0
+    elif btc_15m < -0.5 or eth_15m < -0.75:
+        regime = "Caution"
+        risk = 4.5
+    return {
+        "market_regime": regime,
+        "regime_risk": risk,
+        "btc_return_15m": round(btc_15m, 4),
+        "btc_return_30m": round(btc_30m, 4),
+        "eth_return_15m": round(eth_15m, 4),
+        "eth_return_30m": round(eth_30m, 4),
+    }
+
+
+def _rolling_min_quote_volume(settings: AppSettings) -> float:
+    window_ratio = max(1, int(settings.crypto_scan_minutes)) / 1440
+    return round(max(1_000.0, settings.crypto_min_quote_volume * window_ratio), 4)
 
 
 def _venue_data(
@@ -265,6 +332,7 @@ def _venue_features(
     bid = _float_value(quote.get("bid"))
     ask = _float_value(quote.get("ask"))
     mid = _float_value(quote.get("mid")) or ((bid + ask) / 2 if bid > 0 and ask > 0 else 0.0)
+    venue_quote_volume_24h = _venue_quote_volume_24h(quote, mid)
     spread_pct = _float_value(quote.get("spread_pct")) if quote else 999.0
     quote_time = str(quote.get("quote_time") or "")
     quote_age = _quote_age_seconds(quote_time) if quote_time else None
@@ -297,6 +365,7 @@ def _venue_features(
         "depth_bid_notional": depth_bid_notional,
         "depth_ask_notional": depth_ask_notional,
         "depth_bps": depth_bps,
+        "quote_volume_24h": venue_quote_volume_24h,
         "alpaca_price": alpaca_price,
         "alpaca_venue_price_deviation_pct": deviation,
     }
@@ -315,9 +384,18 @@ def _venue_features(
         "venue_depth_bid_notional": depth_bid_notional,
         "venue_depth_ask_notional": depth_ask_notional,
         "venue_depth_bps": depth_bps,
+        "venue_quote_volume_24h": venue_quote_volume_24h,
         "venue_quote_snapshot": snapshot,
         "alpaca_venue_price_deviation_pct": deviation,
     }
+
+
+def _venue_quote_volume_24h(quote: Mapping[str, object], mid: float) -> float:
+    raw = quote.get("raw") if isinstance(quote, Mapping) else {}
+    if not isinstance(raw, Mapping) or mid <= 0:
+        return 0.0
+    volume = raw.get("v")
+    return max(_list_float(volume, 0), _list_float(volume, 1)) * mid
 
 
 def _quote_age_seconds(value: str) -> float | None:
@@ -334,4 +412,13 @@ def _float_value(value: object) -> float:
     try:
         return float(value or 0)
     except (TypeError, ValueError):
+        return 0.0
+
+
+def _list_float(value: object, index: int) -> float:
+    try:
+        if isinstance(value, (list, tuple)):
+            return float(value[index] or 0)
+        return float(value or 0)
+    except (IndexError, TypeError, ValueError):
         return 0.0

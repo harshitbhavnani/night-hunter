@@ -106,6 +106,28 @@ def test_mock_replay_target_one_then_breakeven_stop() -> None:
     assert fills[1]["shares"] == 25
 
 
+def test_mock_replay_applies_fee_and_exit_slippage_costs() -> None:
+    entered_at = datetime.now(timezone.utc) - timedelta(minutes=20)
+    trade_id = _create_trade(
+        entered_at,
+        settings_snapshot={"mock_fee_bps": 40, "mock_slippage_bps": 5},
+    )
+    bars = [
+        _bar(entered_at + timedelta(minutes=1), high=10.55, low=10.0, close=10.4),
+    ]
+
+    update_mock_trade_results(trade_id, FakeBarsProvider(bars))
+    fill = list_mock_fills(trade_id)[0]
+    payload = json.loads(str(fill["payload_json"]))
+
+    assert fill["fill_type"] == "target_1"
+    assert fill["price"] < 10.5
+    assert fill["pnl"] < (10.5 - 10.0) * 75
+    assert payload["fee_bps"] == 40
+    assert payload["slippage_bps"] == 5
+    assert payload["total_cost"] > 0
+
+
 def test_performance_metrics_compute_win_rate_and_drawdown() -> None:
     entered_at = datetime.now(timezone.utc) - timedelta(minutes=20)
     trade_id = _create_trade(entered_at)
@@ -132,6 +154,8 @@ def test_mock_trade_stores_settings_snapshot() -> None:
             "feed": "crypto",
             "data_confidence": "Alpaca Crypto",
             "crypto_scan_minutes": 90,
+            "mock_fee_bps": 40,
+            "mock_slippage_bps": 5,
             "score_weights": {"rvol": 0.35},
         },
     )
@@ -142,6 +166,8 @@ def test_mock_trade_stores_settings_snapshot() -> None:
     assert snapshot["min_score"] == 7.8
     assert snapshot["feed"] == "crypto"
     assert snapshot["crypto_scan_minutes"] == 90
+    assert snapshot["mock_fee_bps"] == 40
+    assert snapshot["mock_slippage_bps"] == 5
     assert snapshot["score_weights"]["rvol"] == 0.35
 
 

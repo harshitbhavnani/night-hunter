@@ -28,7 +28,50 @@ with st.form("settings"):
     max_stop_distance_pct = st.slider("Max stop distance %", 1.0, 8.0, float(settings.max_stop_distance_pct), 0.1)
     min_risk_reward = st.slider("Minimum risk/reward", 1.0, 4.0, float(settings.min_risk_reward), 0.1)
     max_vwap_extension_pct = st.slider("Max VWAP extension %", 2.0, 15.0, float(settings.max_vwap_extension_pct), 0.1)
-    mock_starting_cash = st.number_input("Mock starting cash", min_value=1000.0, value=float(settings.mock_starting_cash), step=1000.0)
+
+    st.subheader("Mock Trading")
+    st.caption("Mock exits include estimated venue fees and slippage so performance is not over-clean.")
+    mock_cols = st.columns(3)
+    mock_starting_cash = mock_cols[0].number_input(
+        "Mock starting cash",
+        min_value=1000.0,
+        value=float(settings.mock_starting_cash),
+        step=1000.0,
+    )
+    mock_fee_bps = mock_cols[1].number_input(
+        "Fee bps per side",
+        min_value=0.0,
+        max_value=300.0,
+        value=float(settings.mock_fee_bps),
+        step=1.0,
+        help="Applied on entry notional and exit notional when mock fills are replayed.",
+    )
+    mock_slippage_bps = mock_cols[2].number_input(
+        "Exit slippage bps",
+        min_value=0.0,
+        max_value=200.0,
+        value=float(settings.mock_slippage_bps),
+        step=1.0,
+        help="Conservative markdown applied to simulated long exits.",
+    )
+
+    st.subheader("Calibration")
+    st.caption("Calibration is advisory only. It analyzes closed mock trades and does not auto-change settings.")
+    calibration_cols = st.columns(2)
+    calibration_min_trades = calibration_cols[0].number_input(
+        "Minimum closed trades",
+        min_value=10,
+        max_value=500,
+        value=int(settings.calibration_min_trades),
+        step=5,
+    )
+    calibration_holdout_pct = calibration_cols[1].number_input(
+        "Holdout %",
+        min_value=10.0,
+        max_value=60.0,
+        value=float(settings.calibration_holdout_pct),
+        step=5.0,
+    )
 
     st.subheader("Weights")
     st.caption("Crypto mode defaults catalyst weight to 0 because setups are structure-first.")
@@ -69,10 +112,11 @@ with st.form("settings"):
         step=15,
     )
     crypto_min_quote_volume = universe_cols[2].number_input(
-        "Min quote volume",
+        "Min daily Alpaca quote volume",
         min_value=0.0,
         value=float(settings.crypto_min_quote_volume),
         step=10_000.0,
+        help="Daily Alpaca-venue quote-volume discovery floor. The rolling scan uses a time-window-scaled version of this value.",
     )
     crypto_max_spread_pct = universe_cols[3].number_input(
         "Max spread %",
@@ -142,6 +186,10 @@ if submitted:
         "min_risk_reward": min_risk_reward,
         "max_vwap_extension_pct": max_vwap_extension_pct,
         "mock_starting_cash": mock_starting_cash,
+        "mock_fee_bps": mock_fee_bps,
+        "mock_slippage_bps": mock_slippage_bps,
+        "calibration_min_trades": calibration_min_trades,
+        "calibration_holdout_pct": calibration_holdout_pct,
         "crypto_universe_mode": crypto_universe_mode,
         "crypto_symbols": crypto_symbols,
         "crypto_location": crypto_location,
@@ -181,6 +229,10 @@ st.write(
         "Turso configured": bool(settings.turso_database_url and settings.turso_auth_token),
         "Database": str(settings.db_path),
         "Data confidence": "Alpaca Crypto",
+        "Mock fee bps": settings.mock_fee_bps,
+        "Mock slippage bps": settings.mock_slippage_bps,
+        "Calibration min trades": settings.calibration_min_trades,
+        "Calibration holdout %": settings.calibration_holdout_pct,
         "Rolling scan minutes": settings.crypto_scan_minutes,
         "Min quote volume": settings.crypto_min_quote_volume,
         "Max spread %": settings.crypto_max_spread_pct,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 from typing import Mapping
 
 from src.providers.base import BaseMarketDataProvider
@@ -131,11 +132,17 @@ def _record_fill(
     shares = round(float(shares), 8)
     if shares <= EPSILON_QTY:
         return
-    pnl = (price - float(trade["entry"])) * shares
+    fee_bps, slippage_bps = _cost_assumptions(trade)
+    execution_price = _apply_exit_slippage(price, slippage_bps)
+    entry = float(trade["entry"])
+    entry_fee = entry * shares * fee_bps / 10_000
+    exit_fee = execution_price * shares * fee_bps / 10_000
+    total_cost = entry_fee + exit_fee
+    pnl = (execution_price - entry) * shares - total_cost
     state["remaining_shares"] = max(0.0, round(float(state["remaining_shares"]) - shares, 8))
     state["realized_pnl"] = float(state["realized_pnl"]) + pnl
     state["last_event_at"] = fill_time
-    state["last_price"] = price
+    state["last_price"] = execution_price
     if float(state["remaining_shares"]) <= EPSILON_QTY:
         state["closed_at"] = fill_time.isoformat()
         state["exit_reason"] = fill_type
@@ -145,9 +152,18 @@ def _record_fill(
             "fill_time": fill_time.isoformat(),
             "fill_type": fill_type,
             "shares": shares,
-            "price": price,
+            "price": execution_price,
             "pnl": pnl,
-            "payload": {"ticker": trade["ticker"], "entry": trade["entry"]},
+            "payload": {
+                "ticker": trade["ticker"],
+                "entry": trade["entry"],
+                "raw_trigger_price": price,
+                "fee_bps": fee_bps,
+                "slippage_bps": slippage_bps,
+                "entry_fee": entry_fee,
+                "exit_fee": exit_fee,
+                "total_cost": total_cost,
+            },
         }
     )
 
@@ -157,3 +173,26 @@ def _parse_dt(value: str) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _cost_assumptions(trade: Mapping[str, object]) -> tuple[float, float]:
+    try:
+        settings = json.loads(str(trade.get("settings_json") or "{}"))
+    except json.JSONDecodeError:
+        settings = {}
+    fee_bps = _float_default(settings.get("mock_fee_bps"), 40.0) if isinstance(settings, Mapping) else 40.0
+    slippage_bps = _float_default(settings.get("mock_slippage_bps"), 5.0) if isinstance(settings, Mapping) else 5.0
+    return max(0.0, fee_bps), max(0.0, slippage_bps)
+
+
+def _apply_exit_slippage(price: float, slippage_bps: float) -> float:
+    return max(0.0, float(price) * (1 - max(0.0, slippage_bps) / 10_000))
+
+
+def _float_default(value: object, default: float) -> float:
+    if value in (None, ""):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
