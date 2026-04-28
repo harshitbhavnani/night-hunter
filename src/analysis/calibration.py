@@ -50,6 +50,9 @@ def build_calibration_report(
         "by_phase": _group_summary(r_trades, "phase"),
         "by_score_bucket": _score_bucket_summary(r_trades),
         "by_market_regime": _card_group_summary(r_trades, "market_regime"),
+        "by_execution_profile": _card_group_summary(r_trades, "execution_profile"),
+        "by_target_split": _target_split_summary(r_trades),
+        "by_target_2_r": _card_numeric_bucket_summary(r_trades, "target_2_r", (2.0, 2.4, 2.8, 3.2)),
         "common_exit_reasons": dict(Counter(str(trade.get("exit_reason") or "open") for trade in r_trades).most_common()),
         "candidates": [candidate.as_dict() for candidate in candidates],
         "recommendation": _recommendation(candidates),
@@ -176,6 +179,29 @@ def _score_bucket_summary(trades: list[Mapping[str, object]]) -> dict[str, dict[
     return {name: _summary(rows) for name, rows in sorted(grouped.items())}
 
 
+def _target_split_summary(trades: list[Mapping[str, object]]) -> dict[str, dict[str, object]]:
+    grouped: dict[str, list[Mapping[str, object]]] = defaultdict(list)
+    for trade in trades:
+        t1 = float(trade.get("target_1_pct", 0) or 0)
+        t2 = float(trade.get("target_2_pct", 0) or 0)
+        label = f"{t1:.0f}/{t2:.0f}" if t1 or t2 else "Unknown"
+        grouped[label].append(trade)
+    return {name: _summary(rows) for name, rows in sorted(grouped.items())}
+
+
+def _card_numeric_bucket_summary(
+    trades: list[Mapping[str, object]],
+    key: str,
+    thresholds: tuple[float, ...],
+) -> dict[str, dict[str, object]]:
+    grouped: dict[str, list[Mapping[str, object]]] = defaultdict(list)
+    for trade in trades:
+        card = trade.get("card")
+        value = float(card.get(key, 0) or 0) if isinstance(card, Mapping) else 0.0
+        grouped[_numeric_bucket(value, thresholds)].append(trade)
+    return {name: _summary(rows) for name, rows in sorted(grouped.items())}
+
+
 def _score_bucket(score: float) -> str:
     if score >= 9:
         return "9+"
@@ -188,6 +214,17 @@ def _score_bucket(score: float) -> str:
     if score >= 7:
         return "7.0-7.49"
     return "<7"
+
+
+def _numeric_bucket(value: float, thresholds: tuple[float, ...]) -> str:
+    if value <= 0:
+        return "Unknown"
+    previous = 0.0
+    for threshold in thresholds:
+        if value < threshold:
+            return f"{previous:.1f}-{threshold:.1f}"
+        previous = threshold
+    return f"{thresholds[-1]:.1f}+"
 
 
 def _score_counts(scores: list[float]) -> dict[str, int]:

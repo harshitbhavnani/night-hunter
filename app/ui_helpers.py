@@ -257,6 +257,7 @@ def render_trade_card(card: Mapping[str, object] | None) -> None:
         st.write("\n".join(f"- {reason}" for reason in reasons))
         render_alpaca_depth_proxy_check(card)
         render_venue_check(card)
+        render_execution_plan(card)
         return
 
     st.subheader(f"{card['ticker']} | {card['verdict']}")
@@ -271,18 +272,28 @@ def render_trade_card(card: Mapping[str, object] | None) -> None:
     st.caption(card.get("catalyst_summary", ""))
     render_alpaca_depth_proxy_check(card)
     render_venue_check(card)
-
-    levels = {
-        "Entry": card.get("entry"),
-        "Stop": card.get("stop"),
-        "Target 1": card.get("target_1"),
-        "Target 2": card.get("target_2"),
-        "Momentum Life": card.get("estimated_momentum_life"),
-    }
-    st.dataframe(pd.DataFrame([levels]), width="stretch", hide_index=True)
+    render_execution_plan(card)
 
     breakdown = pd.DataFrame([card.get("score_breakdown", {})]).T.rename(columns={0: "Subscore"})
     st.bar_chart(breakdown)
+
+
+def render_execution_plan(card: Mapping[str, object]) -> None:
+    st.subheader("Execution Plan")
+    levels = {
+        "Profile": card.get("execution_profile"),
+        "Quality": card.get("execution_quality"),
+        "Entry": card.get("entry"),
+        "Stop": card.get("stop"),
+        "Stop Distance %": card.get("stop_distance_pct"),
+        "Stop Basis": card.get("stop_basis"),
+        "Target 1": card.get("target_1"),
+        "T1 R": card.get("target_1_r"),
+        "Target 2": card.get("target_2"),
+        "T2 R": card.get("target_2_r"),
+        "Momentum Life": card.get("estimated_momentum_life"),
+    }
+    st.dataframe(pd.DataFrame([levels]), width="stretch", hide_index=True)
 
 
 def render_alpaca_depth_proxy_check(card: Mapping[str, object]) -> None:

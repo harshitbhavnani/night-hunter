@@ -28,6 +28,9 @@ def test_calibration_recommends_only_after_holdout_validation() -> None:
 
     assert report["readiness"] == "ready"
     assert report["baseline"]["trades"] == 34
+    assert report["by_execution_profile"]["expansion_runner"]["trades"] == 28
+    assert report["by_target_split"]["60/40"]["trades"] == 28
+    assert report["by_target_2_r"]["3.2+"]["trades"] == 28
     assert report["candidates"]
     assert report["recommendation"]["action"] in {"review_candidate", "do_not_change"}
     assert report["auto_apply"] is False
@@ -61,7 +64,15 @@ def _trade(index: int, score: float, pnl: float) -> dict[str, object]:
         "score": score,
         "shares": 10,
         "risk_per_share": 1,
+        "target_1_pct": 60 if pnl > 0 else 85,
+        "target_2_pct": 40 if pnl > 0 else 15,
         "realized_pnl": pnl,
         "exit_reason": "target_2" if pnl > 0 else "stop",
-        "card_json": json.dumps({"market_regime": "Constructive" if pnl > 0 else "Caution"}),
+        "card_json": json.dumps(
+            {
+                "market_regime": "Constructive" if pnl > 0 else "Caution",
+                "execution_profile": "expansion_runner" if pnl > 0 else "defensive_scalp",
+                "target_2_r": 3.4 if pnl > 0 else 2.1,
+            }
+        ),
     }

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.scoring.execution_engine import generate_trade_card, generate_trade_card_for_symbol
+from src.scoring.execution_engine import build_execution_candidate, generate_trade_card, generate_trade_card_for_symbol
 
 
 def test_execution_engine_returns_best_valid_trade_card() -> None:
@@ -72,6 +72,34 @@ def test_execution_engine_uses_kraken_ask_for_crypto_entry() -> None:
     assert card.as_dict()["venue_ask"] == 100.6
     assert card.as_dict()["venue_name"] == "Kraken"
     assert card.as_dict()["alpaca_depth_proxy_ok"] is True
+    assert card.as_dict()["execution_profile"] in {"balanced_momentum", "expansion_runner"}
+    assert card.as_dict()["target_2_r"] >= 2.0
+
+
+def test_execution_engine_expands_targets_for_clean_ignition() -> None:
+    clean = build_execution_candidate(
+        {
+            **_valid_row("SOL/USD", 9.0),
+            "short_term_volatility": 0.12,
+            "market_regime": "Constructive",
+        }
+    )
+    defensive = build_execution_candidate(
+        {
+            **_valid_row("SOL/USD", 8.2),
+            "reversal_risk": 5.0,
+            "liquidity_quality": 6.5,
+            "distance_from_vwap_pct": 5.5,
+            "short_term_volatility": 0.35,
+            "market_regime": "Caution",
+        }
+    )
+
+    assert clean["execution_profile"] == "expansion_runner"
+    assert defensive["execution_profile"] == "defensive_scalp"
+    assert clean["target_2_r"] > defensive["target_2_r"]
+    assert clean["target_1_r"] > defensive["target_1_r"]
+    assert clean["recommended_hold_minutes"] > defensive["recommended_hold_minutes"]
 
 
 def _valid_row(ticker: str, score: float) -> dict[str, object]:

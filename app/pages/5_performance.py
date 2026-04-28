@@ -91,6 +91,9 @@ with st.expander("Calibration Breakdowns"):
             "by_phase": report.get("by_phase"),
             "by_score_bucket": report.get("by_score_bucket"),
             "by_market_regime": report.get("by_market_regime"),
+            "by_execution_profile": report.get("by_execution_profile"),
+            "by_target_split": report.get("by_target_split"),
+            "by_target_2_r": report.get("by_target_2_r"),
             "common_exit_reasons": report.get("common_exit_reasons"),
         }
     )

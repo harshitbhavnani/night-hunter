@@ -44,13 +44,14 @@ def recommended_allocation_pct(card: Mapping[str, object]) -> float:
 def recommended_max_hold_minutes(card: Mapping[str, object]) -> int:
     score = float(card.get("score", 0) or 0)
     phase = str(card.get("phase", "Expansion"))
+    model_hold = _feature(card, "recommended_hold_minutes")
     liquidity = _feature(card, "liquidity_quality")
     reversal_risk = _feature(card, "reversal_risk")
     vwap_extension = _feature(card, "distance_from_vwap_pct")
     market_regime = _market_regime(card)
-    hold = 30 if phase == "Ignition" else 18
+    hold = int(model_hold) if model_hold else (30 if phase == "Ignition" else 18)
     if score >= 8.75 and liquidity >= 7.5 and reversal_risk <= 3:
-        hold += 10
+        hold += 5 if model_hold else 10
     if vwap_extension > 5 or reversal_risk >= 4.5:
         hold -= 8
     if market_regime in {"Caution", "Risk-Off"}:
@@ -61,13 +62,14 @@ def recommended_max_hold_minutes(card: Mapping[str, object]) -> int:
 def recommended_target_split(card: Mapping[str, object]) -> dict[str, int]:
     score = float(card.get("score", 0) or 0)
     phase = str(card.get("phase", ""))
+    profile = _execution_profile(card)
     liquidity = _feature(card, "liquidity_quality")
     reversal_risk = _feature(card, "reversal_risk")
     vwap_extension = _feature(card, "distance_from_vwap_pct")
     market_regime = _market_regime(card)
-    if market_regime in {"Caution", "Risk-Off"}:
+    if profile == "defensive_scalp" or market_regime in {"Caution", "Risk-Off"}:
         return {"target_1_pct": 85, "target_2_pct": 15}
-    if score >= 8.7 and phase == "Ignition" and reversal_risk <= 3 and liquidity >= 7:
+    if profile == "expansion_runner" or (score >= 8.7 and phase == "Ignition" and reversal_risk <= 3 and liquidity >= 7):
         return {"target_1_pct": 60, "target_2_pct": 40}
     if reversal_risk >= 4.5 or vwap_extension >= 5 or liquidity < 7:
         return {"target_1_pct": 85, "target_2_pct": 15}
@@ -90,4 +92,14 @@ def _market_regime(card: Mapping[str, object]) -> str:
     features = card.get("features") or {}
     if isinstance(features, Mapping):
         return str(features.get("market_regime") or "")
+    return ""
+
+
+def _execution_profile(card: Mapping[str, object]) -> str:
+    value = card.get("execution_profile")
+    if value:
+        return str(value)
+    features = card.get("features") or {}
+    if isinstance(features, Mapping):
+        return str(features.get("execution_profile") or "")
     return ""

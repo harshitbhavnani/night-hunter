@@ -228,6 +228,8 @@ def test_trade_history_uses_mock_trades_and_fills() -> None:
     assert rows[0]["settings_crypto_max_spread_pct"] == 0.35
     assert rows[0]["venue_ask"] == 10.01
     assert rows[0]["venue_spread_pct"] == 0.2
+    assert rows[0]["execution_profile"] == "balanced_momentum"
+    assert rows[0]["target_2_r"] == 2.4
     assert rows[0]["weight_acceleration"] == 0.30
 
 
@@ -250,6 +252,12 @@ def _create_trade(entered_at: datetime, settings_snapshot: Mapping[str, object] 
                 "venue_depth_notional": 50_000,
                 "venue_depth_bps": 25,
                 "alpaca_venue_price_deviation_pct": 0.1,
+                "execution_profile": "balanced_momentum",
+                "execution_quality": 7.2,
+                "target_1_r": 1.2,
+                "target_2_r": 2.4,
+                "stop_basis": "hybrid_structure",
+                "stop_distance_pct": 2.0,
             },
             "dollar_amount": 1000,
             "entry": 10.0,

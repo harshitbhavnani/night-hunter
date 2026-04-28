@@ -65,6 +65,13 @@ class TradeCard:
             "venue_depth_ask_notional": self.features.get("venue_depth_ask_notional"),
             "venue_depth_bps": self.features.get("venue_depth_bps"),
             "venue_quote_volume_24h": self.features.get("venue_quote_volume_24h"),
+            "execution_profile": self.features.get("execution_profile"),
+            "execution_quality": self.features.get("execution_quality"),
+            "target_1_r": self.features.get("target_1_r"),
+            "target_2_r": self.features.get("target_2_r"),
+            "stop_basis": self.features.get("stop_basis"),
+            "stop_distance_pct": self.features.get("stop_distance_pct"),
+            "recommended_hold_minutes": self.features.get("recommended_hold_minutes"),
             "alpaca_venue_price_deviation_pct": self.features.get("alpaca_venue_price_deviation_pct"),
             "venue_quote_snapshot": self.features.get("venue_quote_snapshot"),
             "market_regime": self.features.get("market_regime"),
@@ -84,16 +91,12 @@ class TradeCard:
 def build_execution_candidate(row: Mapping[str, object]) -> Dict[str, object]:
     price = float(row.get("venue_ask") or row.get("price", 0))
     vwap = float(row.get("vwap", price))
-    breakout = max(0.0, float(row.get("breakout_strength", 0)))
     entry = _round_price(price)
-    vwap_stop = vwap * 0.992 if 0 < vwap < price else price * 0.975
-    structural_stop = max(price * 0.975, vwap_stop)
-    stop = _round_price(max(_min_tick(price), structural_stop))
+    model = _execution_model(row, entry, vwap)
+    stop = _round_price(max(_min_tick(entry), entry - model["risk"]))
     risk = max(_min_tick(price), entry - stop)
-    extension_penalty = max(0.0, float(row.get("distance_from_vwap_pct", 0)) - 3)
-    reward_multiple = max(2.0, min(3.2, 2.4 + breakout / 4 - extension_penalty / 10))
-    target_1 = _round_price(entry + risk * 1.5)
-    target_2 = _round_price(entry + risk * reward_multiple)
+    target_1 = _round_price(entry + risk * float(model["target_1_r"]))
+    target_2 = _round_price(entry + risk * float(model["target_2_r"]))
     risk_reward = round((target_2 - entry) / risk, 2) if risk > 0 else 0.0
     stop_distance_pct = (entry - stop) / entry * 100 if entry else 999.0
     exceptional_structure = (
@@ -111,6 +114,12 @@ def build_execution_candidate(row: Mapping[str, object]) -> Dict[str, object]:
             "target_2": target_2,
             "risk_reward": risk_reward,
             "stop_distance_pct": stop_distance_pct,
+            "execution_profile": model["execution_profile"],
+            "execution_quality": model["execution_quality"],
+            "target_1_r": model["target_1_r"],
+            "target_2_r": model["target_2_r"],
+            "stop_basis": model["stop_basis"],
+            "recommended_hold_minutes": model["recommended_hold_minutes"],
             "exceptional_structure": exceptional_structure,
         }
     )
@@ -154,12 +163,14 @@ def generate_trade_card_for_symbol(
 def _card_from_candidate(candidate: Mapping[str, object], verdict: str, veto_reasons: List[str]) -> TradeCard:
     score = float(candidate.get("score", 0))
     phase = str(candidate.get("phase", "Expansion"))
-    life = "10-25 minutes" if phase == "Ignition" else "5-15 minutes" if phase == "Expansion" else "Stand down"
+    hold_minutes = int(float(candidate.get("recommended_hold_minutes", 0) or 0))
+    life = f"{max(5, hold_minutes - 8)}-{hold_minutes + 5} minutes" if hold_minutes else "Stand down"
     reasons = [
         f"RVOL {float(candidate.get('rvol', 0)):.1f}x",
         f"acceleration {float(candidate.get('acceleration', 0)):.2f}",
         f"breakout {float(candidate.get('breakout_strength', 0)):.2f}%",
         f"VWAP distance {float(candidate.get('distance_from_vwap_pct', 0)):.2f}%",
+        f"profile {candidate.get('execution_profile', 'unknown')}",
     ]
     settings_snapshot = candidate.get("settings_snapshot")
     if not isinstance(settings_snapshot, Mapping):
@@ -190,6 +201,14 @@ def _card_from_candidate(candidate: Mapping[str, object], verdict: str, veto_rea
             "quote_volume": float(candidate.get("quote_volume", 0) or 0),
             "alpaca_quote_volume": float(candidate.get("alpaca_quote_volume", 0) or 0),
             "venue_implied_quote_volume": float(candidate.get("venue_implied_quote_volume", 0) or 0),
+            "short_term_volatility": float(candidate.get("short_term_volatility", 0) or 0),
+            "stop_distance_pct": float(candidate.get("stop_distance_pct", 0) or 0),
+            "execution_profile": str(candidate.get("execution_profile", "") or ""),
+            "execution_quality": float(candidate.get("execution_quality", 0) or 0),
+            "target_1_r": float(candidate.get("target_1_r", 0) or 0),
+            "target_2_r": float(candidate.get("target_2_r", 0) or 0),
+            "stop_basis": str(candidate.get("stop_basis", "") or ""),
+            "recommended_hold_minutes": float(candidate.get("recommended_hold_minutes", 0) or 0),
             "alpaca_depth_notional": float(candidate.get("alpaca_depth_notional", 0) or 0),
             "alpaca_depth_bid_notional": float(candidate.get("alpaca_depth_bid_notional", 0) or 0),
             "alpaca_depth_ask_notional": float(candidate.get("alpaca_depth_ask_notional", 0) or 0),
@@ -240,3 +259,148 @@ def _min_tick(price: float) -> float:
     if price >= 1:
         return 0.0001
     return 0.000001
+
+
+def _execution_model(row: Mapping[str, object], entry: float, vwap: float) -> dict[str, object]:
+    score = float(row.get("score", 0) or 0)
+    phase = str(row.get("phase", "Expansion") or "Expansion")
+    breakout = max(0.0, float(row.get("breakout_strength", 0) or 0))
+    acceleration = max(0.0, float(row.get("acceleration", 0) or 0))
+    reversal_risk = float(row.get("reversal_risk", 0) or 0)
+    liquidity = float(row.get("liquidity_quality", 0) or 0)
+    vwap_extension = max(0.0, float(row.get("distance_from_vwap_pct", 0) or 0))
+    volatility = max(0.0, float(row.get("short_term_volatility", 0) or 0))
+    regime = str(row.get("market_regime", "") or "")
+
+    quality = _execution_quality(score, breakout, acceleration, reversal_risk, liquidity, vwap_extension, regime)
+    profile = _execution_profile(phase, quality, reversal_risk, liquidity, vwap_extension, regime)
+    stop_pct = _stop_distance_pct(profile, volatility, reversal_risk, liquidity, vwap_extension, regime)
+    volatility_stop = entry * (1 - stop_pct / 100)
+    vwap_buffer = min(0.012, 0.004 + volatility * 0.006)
+    vwap_stop = vwap * (1 - vwap_buffer) if 0 < vwap < entry else volatility_stop
+    if profile == "expansion_runner" and 0 < vwap < entry and vwap_extension <= 4:
+        raw_stop = max(volatility_stop, vwap_stop)
+        stop_basis = "vwap_structure"
+    elif profile == "defensive_scalp":
+        raw_stop = volatility_stop
+        stop_basis = "volatility_defensive"
+    else:
+        raw_stop = max(volatility_stop, vwap_stop)
+        stop_basis = "hybrid_structure"
+
+    raw_stop = min(raw_stop, entry - _min_tick(entry))
+    risk = max(_min_tick(entry), entry - raw_stop)
+    target_1_r, target_2_r = _target_multiples(profile, quality, breakout, reversal_risk, vwap_extension, regime)
+    return {
+        "execution_profile": profile,
+        "execution_quality": round(quality * 10, 2),
+        "risk": risk,
+        "target_1_r": round(target_1_r, 2),
+        "target_2_r": round(target_2_r, 2),
+        "stop_basis": stop_basis,
+        "recommended_hold_minutes": _recommended_hold_minutes(profile, quality, phase, regime),
+    }
+
+
+def _execution_quality(
+    score: float,
+    breakout: float,
+    acceleration: float,
+    reversal_risk: float,
+    liquidity: float,
+    vwap_extension: float,
+    regime: str,
+) -> float:
+    raw = (
+        0.30 * _unit((score - 7.0) / 2.0)
+        + 0.20 * _unit(breakout / 3.0)
+        + 0.18 * _unit(acceleration / 3.0)
+        + 0.16 * _unit((liquidity - 6.0) / 4.0)
+        + 0.16 * _unit((4.5 - reversal_risk) / 4.5)
+    )
+    raw -= max(0.0, vwap_extension - 4.0) * 0.035
+    if regime == "Caution":
+        raw -= 0.12
+    elif regime == "Risk-Off":
+        raw -= 0.25
+    return _unit(raw)
+
+
+def _execution_profile(
+    phase: str,
+    quality: float,
+    reversal_risk: float,
+    liquidity: float,
+    vwap_extension: float,
+    regime: str,
+) -> str:
+    if regime in {"Caution", "Risk-Off"} or reversal_risk >= 4.5 or vwap_extension >= 5.0 or liquidity < 7:
+        return "defensive_scalp"
+    if phase == "Ignition" and quality >= 0.68 and reversal_risk <= 3.2:
+        return "expansion_runner"
+    return "balanced_momentum"
+
+
+def _stop_distance_pct(
+    profile: str,
+    volatility: float,
+    reversal_risk: float,
+    liquidity: float,
+    vwap_extension: float,
+    regime: str,
+) -> float:
+    base = 0.72 + volatility * 3.0 + reversal_risk * 0.10 + max(0.0, vwap_extension - 2.0) * 0.08
+    base -= max(0.0, liquidity - 7.0) * 0.07
+    if profile == "expansion_runner":
+        base += 0.20
+    elif profile == "defensive_scalp":
+        base -= 0.15
+    if regime == "Caution":
+        base -= 0.10
+    elif regime == "Risk-Off":
+        base -= 0.20
+    return max(0.55, min(2.75, base))
+
+
+def _target_multiples(
+    profile: str,
+    quality: float,
+    breakout: float,
+    reversal_risk: float,
+    vwap_extension: float,
+    regime: str,
+) -> tuple[float, float]:
+    if profile == "expansion_runner":
+        target_1_r = 1.35
+        target_2_r = 2.65 + quality * 0.75 + min(0.35, breakout / 10)
+    elif profile == "defensive_scalp":
+        target_1_r = 1.0
+        target_2_r = 2.05 + quality * 0.30
+    else:
+        target_1_r = 1.2
+        target_2_r = 2.25 + quality * 0.55 + min(0.25, breakout / 14)
+    target_2_r -= max(0.0, reversal_risk - 3.5) * 0.08
+    target_2_r -= max(0.0, vwap_extension - 4.0) * 0.06
+    if regime == "Caution":
+        target_2_r -= 0.18
+    elif regime == "Risk-Off":
+        target_2_r -= 0.35
+    return target_1_r, max(2.0, min(3.6, target_2_r))
+
+
+def _recommended_hold_minutes(profile: str, quality: float, phase: str, regime: str) -> int:
+    if profile == "expansion_runner":
+        hold = 30 + int(quality * 15)
+    elif profile == "defensive_scalp":
+        hold = 12 + int(quality * 8)
+    else:
+        hold = 18 + int(quality * 12)
+    if phase == "Ignition":
+        hold += 4
+    if regime in {"Caution", "Risk-Off"}:
+        hold -= 5
+    return int(max(10, min(50, hold)))
+
+
+def _unit(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))

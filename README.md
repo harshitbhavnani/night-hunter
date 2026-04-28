@@ -90,6 +90,14 @@ Hard vetoes reject weak scores, exhaustion/dump phases, wide stops, poor risk/re
 
 The scanner also labels the rolling BTC/ETH regime as Constructive, Caution, or Risk-Off. Risk-Off blocks new altcoin long cards, while Caution makes mock sizing and target splits more conservative.
 
+Execution cards use one of three dynamic profiles:
+
+- `defensive_scalp`: tighter hold window, faster T1, smaller runner when reversal risk, VWAP extension, liquidity, or regime is weaker.
+- `balanced_momentum`: default controlled momentum plan.
+- `expansion_runner`: cleaner ignition setup with more room for the second target.
+
+Stops are generated from volatility, VWAP structure, reversal risk, liquidity, and regime. Target 1 and Target 2 are expressed as R-multiples, not fixed placeholder prices.
+
 ## Mock Trading
 
 Valid trade cards include **Enter Mock Trade**. The app recommends editable controls:
@@ -104,7 +112,7 @@ Replay includes configurable estimated fee and slippage assumptions. Defaults ar
 
 ## Calibration
 
-The Performance page includes a Calibration Advisor once closed mock trades accumulate. It uses a simple walk-forward split, reports expectancy in R, summarizes performance by phase, score bucket, ticker/regime, and tests candidate minimum-score thresholds against a holdout set. It is intentionally advisory only: it never auto-applies settings because that would overfit a small live sample.
+The Performance page includes a Calibration Advisor once closed mock trades accumulate. It uses a simple walk-forward split, reports expectancy in R, summarizes performance by phase, score bucket, market regime, execution profile, target split, and Target 2 R bucket, then tests candidate minimum-score thresholds against a holdout set. It is intentionally advisory only: it never auto-applies settings because that would overfit a small live sample.
 
 ## Pages
 
