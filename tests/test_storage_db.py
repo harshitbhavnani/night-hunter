@@ -20,7 +20,7 @@ def test_turso_http_arg_encodes_supported_sql_values() -> None:
     assert _http_arg(None) == {"type": "null"}
     assert _http_arg(True) == {"type": "integer", "value": "1"}
     assert _http_arg(7) == {"type": "integer", "value": "7"}
-    assert _http_arg(1.25) == {"type": "float", "value": "1.25"}
+    assert _http_arg(1.25) == {"type": "float", "value": 1.25}
     assert _http_arg("BTC/USD") == {"type": "text", "value": "BTC/USD"}
     assert _http_arg(b"nh") == {"type": "blob", "base64": "bmg="}
 
