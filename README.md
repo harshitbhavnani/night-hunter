@@ -139,4 +139,4 @@ Deploy the repo to Streamlit Community Cloud with entrypoint:
 app/streamlit_app.py
 ```
 
-Add Alpaca and Turso secrets in Streamlit Cloud before running scans. The app shows setup instructions instead of scanning when Alpaca credentials are missing.
+`runtime.txt` pins the hosted app to Python 3.11 for dependency stability. Add Alpaca and Turso secrets in Streamlit Cloud before running scans. The app shows setup instructions instead of scanning when Alpaca credentials are missing. If Turso is temporarily unavailable or misconfigured, the app falls back to local SQLite so the dashboard still boots, but hosted mock history will not be durable until Turso is fixed.

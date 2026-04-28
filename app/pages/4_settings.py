@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
 import streamlit as st
 
 from app.ui_helpers import effective_settings, page_setup, render_basic_data_banner, render_upgrade_trigger_note
+from src.storage.db import storage_warning
 from src.storage.repositories import save_settings_version
 
 
@@ -19,6 +20,8 @@ st.title("Settings")
 settings = effective_settings()
 render_basic_data_banner(settings)
 render_upgrade_trigger_note()
+if storage_warning():
+    st.warning(storage_warning())
 
 with st.form("settings"):
     st.subheader("Thresholds")

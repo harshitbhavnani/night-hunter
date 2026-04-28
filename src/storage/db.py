@@ -7,6 +7,9 @@ from typing import Iterable, Sequence
 from src.config import DB_PATH, get_settings
 
 
+_LAST_DB_WARNING: str | None = None
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS universe_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -143,20 +146,20 @@ CREATE TABLE IF NOT EXISTS portfolio_snapshots (
 class DatabaseConnection:
     def __init__(self, path: Path | str | None = None) -> None:
         settings = get_settings()
-        path = path or settings.db_path
+        self.path = Path(path or settings.db_path)
         self.uses_turso = bool(settings.turso_database_url and settings.turso_auth_token)
         if self.uses_turso:
-            import libsql_client
+            try:
+                import libsql_client
 
-            self._connection = libsql_client.create_client_sync(
-                settings.turso_database_url,
-                auth_token=settings.turso_auth_token,
-            )
+                self._connection = libsql_client.create_client_sync(
+                    settings.turso_database_url,
+                    auth_token=settings.turso_auth_token,
+                )
+            except Exception as exc:
+                self._fallback_to_sqlite(exc)
         else:
-            db_path = Path(path)
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            self._connection = sqlite3.connect(db_path)
-            self._connection.row_factory = sqlite3.Row
+            self._connect_sqlite()
 
     def __enter__(self) -> "DatabaseConnection":
         return self
@@ -169,13 +172,20 @@ class DatabaseConnection:
         self.close()
 
     def execute(self, sql: str, params: Sequence[object] = ()) -> object:
-        result = self._connection.execute(sql, params)
+        try:
+            result = self._connection.execute(sql, params)
+        except Exception as exc:
+            if self.uses_turso:
+                self._fallback_to_sqlite(exc)
+                result = self._connection.execute(sql, params)
+            else:
+                raise
         return LibsqlResult(result) if self.uses_turso else result
 
     def executemany(self, sql: str, rows: Iterable[Sequence[object]]) -> None:
         if self.uses_turso:
             for row in rows:
-                self._connection.execute(sql, row)
+                self.execute(sql, row)
             return
         if hasattr(self._connection, "executemany"):
             self._connection.executemany(sql, list(rows))
@@ -190,7 +200,7 @@ class DatabaseConnection:
         for statement in script.split(";"):
             statement = statement.strip()
             if statement:
-                self._connection.execute(statement)
+                self.execute(statement)
 
     def commit(self) -> None:
         if self.uses_turso:
@@ -204,9 +214,28 @@ class DatabaseConnection:
     def close(self) -> None:
         self._connection.close()
 
+    def _connect_sqlite(self) -> None:
+        self.uses_turso = False
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._connection = sqlite3.connect(self.path)
+        self._connection.row_factory = sqlite3.Row
+
+    def _fallback_to_sqlite(self, exc: Exception) -> None:
+        global _LAST_DB_WARNING
+        _LAST_DB_WARNING = f"Turso unavailable; using local SQLite fallback. {type(exc).__name__}: {exc}"
+        try:
+            self._connection.close()
+        except Exception:
+            pass
+        self._connect_sqlite()
+
 
 def get_connection(path: Path | str | None = None) -> DatabaseConnection:
     return DatabaseConnection(path)
+
+
+def storage_warning() -> str | None:
+    return _LAST_DB_WARNING
 
 
 class LibsqlResult:

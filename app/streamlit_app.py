@@ -25,7 +25,7 @@ from src.jobs.run_scan import run_scan
 from src.mock_trading.performance import compute_performance
 from src.mock_trading.simulator import update_open_mock_trades
 from src.providers.alpaca_provider import AlpacaProvider
-from src.storage.db import init_db
+from src.storage.db import init_db, storage_warning
 from src.storage.repositories import latest_scan_results, latest_trade_card, list_mock_fills, list_mock_trades, portfolio_state
 
 
@@ -38,6 +38,8 @@ st.caption("24/7 crypto momentum dashboard. Decision support and mock trading on
 settings = effective_settings()
 render_basic_data_banner(settings)
 render_upgrade_trigger_note()
+if storage_warning():
+    st.warning(storage_warning())
 top = st.columns([1, 1, 2])
 top[0].metric("Provider", "Alpaca Crypto" if settings.live_data_enabled else "Not connected")
 top[1].metric("Universe", settings.crypto_universe_mode)
