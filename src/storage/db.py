@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import base64
 import sqlite3
+from collections.abc import Mapping as MappingABC
 from pathlib import Path
 from typing import Iterable, Sequence
+
+import requests
 
 from src.config import DB_PATH, get_settings
 
@@ -150,11 +154,9 @@ class DatabaseConnection:
         self.uses_turso = bool(settings.turso_database_url and settings.turso_auth_token)
         if self.uses_turso:
             try:
-                import libsql_client
-
-                self._connection = libsql_client.create_client_sync(
+                self._connection = TursoHttpConnection(
                     settings.turso_database_url,
-                    auth_token=settings.turso_auth_token,
+                    settings.turso_auth_token,
                 )
             except Exception as exc:
                 self._fallback_to_sqlite(exc)
@@ -180,7 +182,7 @@ class DatabaseConnection:
                 result = self._connection.execute(sql, params)
             else:
                 raise
-        return LibsqlResult(result) if self.uses_turso else result
+        return result
 
     def executemany(self, sql: str, rows: Iterable[Sequence[object]]) -> None:
         if self.uses_turso:
@@ -238,18 +240,191 @@ def storage_warning() -> str | None:
     return _LAST_DB_WARNING
 
 
-class LibsqlResult:
-    def __init__(self, result: object) -> None:
-        self._result = result
-        self.lastrowid = getattr(result, "last_insert_rowid", None)
+class TursoHttpConnection:
+    def __init__(self, database_url: str, auth_token: str) -> None:
+        self.base_url = _http_base_url(database_url)
+        self.auth_token = auth_token
+        self._session = requests.Session()
 
-    def fetchone(self) -> object | None:
+    def execute(self, sql: str, params: Sequence[object] = ()) -> "TursoHttpResult":
+        statement: dict[str, object] = {"sql": sql}
+        if params:
+            statement["args"] = [_http_arg(value) for value in params]
+        response = self._session.post(
+            f"{self.base_url}/v2/pipeline",
+            headers={
+                "Authorization": f"Bearer {self.auth_token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "requests": [
+                    {"type": "execute", "stmt": statement},
+                    {"type": "close"},
+                ]
+            },
+            timeout=20,
+        )
+        if response.status_code >= 400:
+            detail = response.text.strip()
+            if len(detail) > 500:
+                detail = f"{detail[:500]}..."
+            raise RuntimeError(f"Turso HTTP {response.status_code}: {detail or response.reason}")
+        payload = response.json()
+        result = _extract_turso_result(payload)
+        return TursoHttpResult(result)
+
+    def close(self) -> None:
+        self._session.close()
+
+
+class TursoHttpResult:
+    def __init__(self, result: object) -> None:
+        result = result if isinstance(result, dict) else {}
+        self.columns = _column_names(result.get("cols") or result.get("columns") or [])
+        self.rows = _http_rows(result.get("rows") or [], self.columns)
+        self.lastrowid = _optional_int(result.get("last_insert_rowid") or result.get("lastInsertRowid"))
+
+    def fetchone(self) -> "TursoHttpRow | None":
         rows = self.fetchall()
         return rows[0] if rows else None
 
-    def fetchall(self) -> list[object]:
-        rows = getattr(self._result, "rows", [])
-        return list(rows)
+    def fetchall(self) -> list["TursoHttpRow"]:
+        return list(self.rows)
+
+
+class TursoHttpRow(MappingABC):
+    def __init__(self, columns: Sequence[str], values: Sequence[object]) -> None:
+        self._columns = list(columns)
+        self._values = list(values)
+        self._by_name = {name: self._values[index] for index, name in enumerate(self._columns)}
+
+    def __getitem__(self, key: object) -> object:
+        if isinstance(key, int):
+            return self._values[key]
+        return self._by_name[str(key)]
+
+    def __iter__(self):
+        return iter(self._columns)
+
+    def __len__(self) -> int:
+        return len(self._columns)
+
+    def keys(self):
+        return self._by_name.keys()
+
+
+def _http_base_url(value: str) -> str:
+    url = str(value or "").strip().rstrip("/")
+    if url.startswith("libsql://"):
+        url = "https://" + url[len("libsql://") :]
+    if url.startswith("wss://"):
+        url = "https://" + url[len("wss://") :]
+    if not url.startswith("https://"):
+        raise ValueError("TURSO_DATABASE_URL must be a libsql:// or https:// URL.")
+    return url
+
+
+def _http_arg(value: object) -> dict[str, object]:
+    if value is None:
+        return {"type": "null"}
+    if isinstance(value, bool):
+        return {"type": "integer", "value": "1" if value else "0"}
+    if isinstance(value, int):
+        return {"type": "integer", "value": str(value)}
+    if isinstance(value, float):
+        return {"type": "float", "value": str(value)}
+    if isinstance(value, bytes):
+        return {"type": "blob", "base64": base64.b64encode(value).decode("ascii")}
+    return {"type": "text", "value": str(value)}
+
+
+def _extract_turso_result(payload: object) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        raise RuntimeError("Turso returned a non-JSON response.")
+    results = payload.get("results")
+    if not isinstance(results, list) or not results:
+        raise RuntimeError("Turso response did not include SQL results.")
+    for item in results:
+        result = _find_statement_result(item)
+        if result is not None:
+            return result
+    raise RuntimeError("Turso response did not include an execute result.")
+
+
+def _find_statement_result(value: object) -> dict[str, object] | None:
+    if not isinstance(value, dict):
+        return None
+    if "error" in value:
+        raise RuntimeError(f"Turso SQL error: {value['error']}")
+    if any(key in value for key in ("cols", "rows", "affected_row_count", "last_insert_rowid")):
+        return value
+    for key in ("ok", "response", "execute", "result"):
+        nested = _find_statement_result(value.get(key))
+        if nested is not None:
+            return nested
+    return None
+
+
+def _column_names(columns: object) -> list[str]:
+    names: list[str] = []
+    if not isinstance(columns, list):
+        return names
+    for index, column in enumerate(columns):
+        if isinstance(column, dict):
+            names.append(str(column.get("name") or column.get("column") or column.get("displayName") or index))
+        else:
+            names.append(str(column))
+    return names
+
+
+def _http_rows(rows: object, columns: list[str]) -> list[TursoHttpRow]:
+    parsed: list[TursoHttpRow] = []
+    if not isinstance(rows, list):
+        return parsed
+    for row in rows:
+        if isinstance(row, dict):
+            row_columns = columns or list(row.keys())
+            values = [_decode_http_value(row.get(column)) for column in row_columns]
+        elif isinstance(row, list):
+            row_columns = columns or [str(index) for index in range(len(row))]
+            values = [_decode_http_value(value) for value in row]
+        else:
+            continue
+        parsed.append(TursoHttpRow(row_columns, values))
+    return parsed
+
+
+def _decode_http_value(value: object) -> object:
+    if not isinstance(value, dict):
+        return value
+    value_type = str(value.get("type") or "").lower()
+    if value_type == "null":
+        return None
+    if value_type == "integer":
+        return _optional_int(value.get("value"))
+    if value_type == "float":
+        try:
+            return float(value.get("value"))
+        except (TypeError, ValueError):
+            return 0.0
+    if value_type == "blob":
+        raw = value.get("base64") or ""
+        try:
+            return base64.b64decode(str(raw))
+        except Exception:
+            return b""
+    if "value" in value:
+        return value.get("value")
+    return value
+
+
+def _optional_int(value: object) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def init_db(path: Path | str | None = None) -> None:

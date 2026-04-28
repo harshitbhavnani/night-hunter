@@ -57,7 +57,7 @@ CALIBRATION_MIN_TRADES = "30"
 CALIBRATION_HOLDOUT_PCT = "30"
 ```
 
-Turso/libSQL is optional for local development. If Turso credentials are blank, Night Hunter uses `data/night_hunter.sqlite3`. For Streamlit Cloud, configure Turso so mock-trade history survives app restarts and redeploys.
+Turso/libSQL is optional for local development. If Turso credentials are blank, Night Hunter uses `data/night_hunter.sqlite3`. For Streamlit Cloud, configure Turso so mock-trade history survives app restarts and redeploys. `TURSO_DATABASE_URL` can be the `libsql://...` URL Turso shows; Night Hunter converts it to Turso's HTTPS SQL endpoint internally.
 
 ## Crypto Universe
 
