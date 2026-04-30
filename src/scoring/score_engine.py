@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import log
 from typing import Dict, Mapping
 
 from src.config import ScoreWeights
@@ -31,15 +32,17 @@ def clamp_0_10(value: float) -> float:
 
 
 def normalize_rvol(rvol: float) -> float:
-    return clamp_0_10((rvol - 1) / 6 * 10)
+    if rvol <= 1:
+        return 0.0
+    return clamp_0_10(log(rvol) / log(6) * 10)
 
 
 def normalize_acceleration(acceleration: float) -> float:
-    return clamp_0_10(acceleration / 3 * 10)
+    return clamp_0_10(acceleration / 1.2 * 10)
 
 
 def normalize_breakout(strength_pct: float) -> float:
-    return clamp_0_10((strength_pct + 0.25) / 4 * 10)
+    return clamp_0_10((strength_pct + 0.1) / 2.0 * 10)
 
 
 def compute_momentum_score(

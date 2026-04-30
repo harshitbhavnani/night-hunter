@@ -98,6 +98,45 @@ def effective_settings() -> AppSettings:
     )
 
 
+def provider_label(settings: AppSettings) -> str:
+    return "Alpaca Crypto bars" if settings.live_data_enabled else "Not connected"
+
+
+def venue_label(settings: AppSettings) -> str:
+    provider = settings.venue_provider.upper() if settings.venue_provider else "None"
+    return f"{provider} gate"
+
+
+def universe_label(settings: AppSettings, diagnostics: Mapping[str, object] | None = None) -> str:
+    diagnostics = diagnostics or {}
+    source = str(diagnostics.get("universe_source") or "").lower()
+    fallback_used = bool(diagnostics.get("safe_fallback_used", False))
+    if source == "dynamic_alpaca" and not fallback_used:
+        return "Dynamic Alpaca USD pairs"
+    if source == "safe_fallback" or fallback_used:
+        return "Safe fallback pairs"
+    if settings.crypto_universe_mode == "fixed":
+        return "Fixed fallback list"
+    return "Dynamic discovery"
+
+
+def universe_detail(diagnostics: Mapping[str, object] | None = None) -> str | None:
+    diagnostics = diagnostics or {}
+    if not diagnostics:
+        return None
+    discovered = diagnostics.get("usd_pair_count")
+    eligible = diagnostics.get("universe_size")
+    trading = diagnostics.get("final_trading_universe_size")
+    parts = []
+    if discovered is not None:
+        parts.append(f"{int(discovered):,} discovered")
+    if eligible is not None:
+        parts.append(f"{int(eligible):,} volume eligible")
+    if trading is not None:
+        parts.append(f"{int(trading):,} trading universe")
+    return " | ".join(parts) if parts else None
+
+
 def scan_dataframe(rows: list[Mapping[str, object]]) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=list(TABLE_COLUMNS.values()))
@@ -167,7 +206,7 @@ def render_scan_diagnostics(result: Mapping[str, object] | None) -> None:
         st.caption(f"Universe cache: {cache_text}")
         columns = st.columns(4)
         metrics = [
-            ("Fallback Pairs", diagnostics.get("configured_pair_count")),
+            ("Configured Fallback Pairs", diagnostics.get("configured_pair_count")),
             ("Alpaca Assets", diagnostics.get("total_alpaca_crypto_assets", diagnostics.get("assets_loaded"))),
             ("USD Pairs", diagnostics.get("usd_pair_count")),
             ("Pairs With Daily Bars", diagnostics.get("pairs_with_daily_bars")),

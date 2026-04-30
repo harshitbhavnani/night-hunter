@@ -13,6 +13,7 @@ import streamlit as st
 from app.ui_helpers import (
     effective_settings,
     page_setup,
+    provider_label,
     render_basic_data_banner,
     render_scan_diagnostics,
     render_setup_instructions,
@@ -20,6 +21,9 @@ from app.ui_helpers import (
     render_trade_card,
     render_upgrade_trigger_note,
     scan_dataframe,
+    universe_detail,
+    universe_label,
+    venue_label,
 )
 from src.jobs.run_scan import run_scan
 from src.mock_trading.performance import compute_performance
@@ -40,9 +44,14 @@ render_basic_data_banner(settings)
 render_upgrade_trigger_note()
 if storage_warning():
     st.warning(storage_warning())
-top = st.columns([1, 1, 2])
-top[0].metric("Provider", "Alpaca Crypto" if settings.live_data_enabled else "Not connected")
-top[1].metric("Universe", settings.crypto_universe_mode)
+result = st.session_state.get("latest_scan_result")
+diagnostics = result.get("diagnostics", {}) if isinstance(result, dict) else {}
+top = st.columns([1.2, 1, 1.4, 2])
+top[0].metric("Data Feed", provider_label(settings))
+top[1].metric("Venue Gate", venue_label(settings))
+top[2].metric("Universe Source", universe_label(settings, diagnostics))
+if universe_detail(diagnostics):
+    top[2].caption(universe_detail(diagnostics))
 
 render_setup_instructions(settings)
 
@@ -53,7 +62,7 @@ if settings.live_data_enabled and not st.session_state.get("mock_results_auto_re
     except Exception as exc:
         st.caption(f"Mock result refresh skipped: {exc}")
 
-if top[2].button("Run Crypto Scan", type="primary", width="stretch", disabled=not settings.live_data_enabled):
+if top[3].button("Run Crypto Scan", type="primary", width="stretch", disabled=not settings.live_data_enabled):
     with st.spinner("Running a rolling crypto scan and refreshing the shortlist..."):
         try:
             result = run_scan(settings=settings)

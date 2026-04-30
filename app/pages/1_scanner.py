@@ -17,6 +17,8 @@ from app.ui_helpers import (
     render_setup_instructions,
     render_shortlist_trade_card_launcher,
     scan_dataframe,
+    universe_detail,
+    universe_label,
 )
 from src.jobs.run_scan import run_scan
 from src.storage.repositories import latest_scan_results
@@ -32,7 +34,7 @@ render_setup_instructions(settings)
 left, middle, right = st.columns([1, 1, 2])
 with left:
     run_now = st.button("Refresh Crypto Scan", type="primary", width="stretch", disabled=not settings.live_data_enabled)
-    st.caption(f"Rolling {settings.crypto_scan_minutes}-minute scan over {settings.crypto_universe_mode} universe.")
+    st.caption(f"Rolling {settings.crypto_scan_minutes}-minute scan over {universe_label(settings)}.")
 with middle:
     refresh_universe = st.button(
         "Refresh Pair Cache",
@@ -68,6 +70,8 @@ if result:
         f"Active scan window ended {diagnostics.get('scan_window_end', 'unknown')} "
         f"({diagnostics.get('scan_window_label', 'rolling crypto window')})."
     )
+    detail = universe_detail(diagnostics)
+    st.caption(f"Universe source: {universe_label(settings, diagnostics)}" + (f" | {detail}" if detail else ""))
 else:
     st.caption(f"Crypto scans use the latest rolling {settings.crypto_scan_minutes}-minute window.")
 
